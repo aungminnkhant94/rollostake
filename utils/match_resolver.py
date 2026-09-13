@@ -101,9 +101,14 @@ def resolve_match_id(row: dict, statuses=None) -> str:
     if match_id:
         c.execute("SELECT match_id, status FROM matches WHERE match_id = ?", (match_id,))
         found = c.fetchone()
-        if found and (not statuses or found[1] in statuses):
+        if found:
             conn.close()
-            return found[0]
+            if not statuses or found[1] in statuses:
+                return found[0]
+            # An explicit known id belongs to that historical fixture.  If its
+            # status is outside the caller's scope, skip it instead of silently
+            # remapping the row to a newer fixture with the same teams.
+            return ""
 
     clauses = ["home_team = ?", "away_team = ?"]
     params = [home_team, away_team]

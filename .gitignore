@@ -27,6 +27,11 @@ Thumbs.db
 
 # Logs
 *.log
+*.err
+
+# Local generated and browser QA artifacts
+output/
+.playwright-cli/
 
 # Research outputs
 research/cache/

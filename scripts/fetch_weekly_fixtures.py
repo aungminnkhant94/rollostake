@@ -20,7 +20,8 @@ from scrapers.manual_fixtures import add_fixture
 from utils.team_normalizer import normalize_team_name
 
 
-API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+# site.api.espn.com edge-blocks some clients (HTTP 403); the web mirror serves identical JSON.
+API_BASE = "https://site.web.api.espn.com/apis/site/v2/sports/soccer"
 LEAGUE_CODES = {
     "EPL": "eng.1",
     "L1": "fra.1",
@@ -157,7 +158,7 @@ def fetch_fixtures(leagues: list[str], start_date: str, end_date: str, timezone_
         data = _request_json(url)
         for match in data.get("events", []):
             fixture = _fixture_from_match(match, league, timezone_name)
-            if fixture:
+            if fixture and start_date <= fixture["kickoff"][:10] <= end_date:
                 fixtures.append(fixture)
     fixtures.sort(key=lambda item: (item["kickoff"], item["league"], item["home_team"]))
     return fixtures

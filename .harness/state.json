@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "project": "rollostake",
+  "created_at": "2026-09-04T01:46:11+08:00",
+  "updated_at": "2026-09-13T14:04:47+08:00",
+  "current": {
+    "task_id": null,
+    "agent": null,
+    "summary": "",
+    "started_at": null
+  },
+  "tasks": [
+    {
+      "id": "TASK-0001",
+      "title": "Collect remediation evidence only: completed five-league results since Aug 1 and fresh injury news into output/remediation-20260905/kimi; no live writes, refit, card generation, code edits, or publication. Follow brief in that folder.",
+      "status": "done",
+      "preferred_agent": "kimi-k3",
+      "owner": "kimi-k3",
+      "created_at": "2026-09-05T21:27:05+08:00",
+      "started_at": "2026-09-05T21:33:01+08:00",
+      "completed_at": "2026-09-05T21:45:22+08:00",
+      "result": "Bounded evidence collection completed: 106 completed five-league results (raw + normalized) and current card-team injury news saved under output/remediation-20260905/kimi with coverage, staleness labels, and recorded fetch failures. Savio availability and Minteh alias verified. No live writes, imports, or publication."
+    },
+    {
+      "id": "TASK-0002",
+      "title": "Recalculate predictions only from repaired saved inputs; preserve picks/results/parlays/dashboard and return draft for Codex review. Follow compute-brief.txt.",
+      "status": "done",
+      "preferred_agent": "kimi-k3",
+      "owner": "kimi-k3",
+      "created_at": "2026-09-05T23:03:08+08:00",
+      "started_at": "2026-09-05T23:03:40+08:00",
+      "completed_at": "2026-09-05T23:45:17+08:00",
+      "result": "Predictions-only recompute complete. Run 2 (python -u) EXIT=0; all 5 league Dixon-Coles fits converged (EPL/L1/Bundesliga/SerieA/LaLiga, LL -568.74/-580.34/-599.12/-532.27/-538.90), no failures or default fallbacks. Fresh writes: 107 predictions (107 current fixtures) + 1498 layer rows (107x14), 565 active layer hits. 8 unpred predicted scheduled rows are legacy manual demo fixtures from 2025/2026-04, not real slate. Protected audit pre/post: picks(88), results(78), parley_slips(10), parley_legs(25), dashboard all SHA-256 identical. Caveat: first buffered run exited 127 with empty log after partial save (20/107); rerun unbuffered succeeded - flagging to Codex. Evidence: output/remediation-20260905/kimi/{compute.log,compute-report.md,audit-pre.json,audit-post2.json}. Not published."
+    },
+    {
+      "id": "TASK-0003",
+      "title": "Refresh Sep 11-18 core-league fixtures from verified 57-row preflight; run only python scripts\\fetch_weekly_fixtures.py --from-date 2026-09-11 --to-date 2026-09-18; do not run later stages or change code/config",
+      "status": "done",
+      "preferred_agent": "kimi-k3",
+      "owner": "codex-sol",
+      "created_at": "2026-09-11T12:06:32+08:00",
+      "started_at": "2026-09-11T12:07:19+08:00",
+      "completed_at": "2026-09-11T12:07:54+08:00",
+      "result": "Kimi quota returned 403 before execution; Codex fallback saved exactly 57 verified unique fixtures for Sep 11-18, all scheduled and in-window; DB quick_check ok."
+    }
+  ],
+  "last_handoff": {
+    "from_agent": "codex-sol",
+    "status": "ready",
+    "summary": "Added Low Risk history pagination: all 67 results, 10 per page across 7 pages with Prev, Next, and numbered controls; Parley pagination preserved; no picks or result records changed by this UI task; browser and integrity checks passed.",
+    "next": "Use the Low Risk and Parley pagination on the dashboard; settle the remaining pending matches normally after they become final.",
+    "at": "2026-09-13T14:04:47+08:00"
+  }
+}

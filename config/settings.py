@@ -29,6 +29,23 @@ def load_settings():
         "min_edge": 0.05,
         "max_picks": 12,
         "use_fatigue": True,
+        "adjustment_layers": {
+            "enabled": True,
+            "rolling_blend_threshold": 0.30,
+            "lambda_min": 0.30,
+            "lambda_max": 5.00,
+            "dixon_coles_rho": -0.13,
+            "manual_context_file": "data/team_context.json",
+            "derby_pairs": [],
+        },
+        "context_gate": {
+            "enabled": True,
+            "blocked_ranges": ["C", "D"],
+            "required_layers": {
+                "default": [1, 2, 7, 10],
+                "goal_markets": [1, 2, 3, 7, 10],
+            },
+        },
         "ranges": {
             "C": {
                 "name": "High Risk",
@@ -61,6 +78,18 @@ def load_settings():
     settings["ranges"] = {
         **defaults["ranges"],
         **loaded.get("ranges", {}),
+    }
+    settings["adjustment_layers"] = {
+        **defaults["adjustment_layers"],
+        **loaded.get("adjustment_layers", {}),
+    }
+    settings["context_gate"] = {
+        **defaults["context_gate"],
+        **loaded.get("context_gate", {}),
+    }
+    settings["context_gate"]["required_layers"] = {
+        **defaults["context_gate"]["required_layers"],
+        **loaded.get("context_gate", {}).get("required_layers", {}),
     }
     env_key = os.getenv("API_FOOTBALL_KEY")
     if env_key:

@@ -126,6 +126,83 @@ def _match_kickoff(c, match_id: str) -> str:
     return row[0] if row else ""
 
 
+def _settle_ready_parley_slips(c, slip_ids=None):
+    """Settle pending parlays as soon as their outcome is irreversible."""
+    if slip_ids is None:
+        c.execute("SELECT id FROM parley_slips WHERE status = 'pending'")
+        slip_ids = {row[0] for row in c.fetchall()}
+
+    settled_slips = []
+    for slip_id in set(slip_ids):
+        c.execute(
+            "SELECT stake FROM parley_slips WHERE id = ? AND status = 'pending'",
+            (slip_id,),
+        )
+        row = c.fetchone()
+        if not row:
+            continue
+        stake = float(row[0] or 0)
+
+        c.execute(
+            """
+            SELECT l.result, l.odds
+            FROM parley_legs l
+            WHERE l.slip_id = ?
+            ORDER BY l.leg_order
+            """,
+            (slip_id,),
+        )
+        legs = c.fetchall()
+        if not legs:
+            continue
+        leg_results = [result for result, _odds in legs]
+
+        # One lost leg makes the whole parlay an immediate, irreversible loss.
+        if "loss" in leg_results:
+            slip_result = "loss"
+            payout = 0.0
+            pnl = -stake
+        elif any(result not in {"win", "push"} for result in leg_results):
+            continue
+        else:
+            effective_odds = 1.0
+            for leg_result, odds in legs:
+                if leg_result == "win":
+                    effective_odds *= float(odds or 1)
+            if effective_odds > 1:
+                slip_result = "win"
+                payout = stake * effective_odds
+                pnl = payout - stake
+            else:
+                slip_result = "push"
+                payout = stake
+                pnl = 0.0
+
+        c.execute(
+            """
+            UPDATE parley_slips
+            SET status = 'settled', result = ?, payout = ?, pnl = ?, settled_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'pending'
+            """,
+            (slip_result, payout, pnl, slip_id),
+        )
+        if c.rowcount:
+            settled_slips.append((slip_id, slip_result, pnl))
+
+    return settled_slips
+
+
+def settle_ready_parley_slips():
+    """Backfill any pending slip whose saved leg results already decide it."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    settled_slips = _settle_ready_parley_slips(c)
+    conn.commit()
+    conn.close()
+    return settled_slips
+
+
 def _settle_parley_slips(c, match_ids, home_team, away_team, home_goals, away_goals):
     c.execute(
         f"""
@@ -152,55 +229,7 @@ def _settle_parley_slips(c, match_ids, home_team, away_team, home_goals, away_go
         affected_slips.add(slip_id)
         settled_legs.append((slip_id, selection, leg_result))
 
-    settled_slips = []
-    for slip_id in affected_slips:
-        c.execute(
-            """
-            SELECT l.result, l.odds
-            FROM parley_legs l
-            WHERE l.slip_id = ?
-            ORDER BY l.leg_order
-            """,
-            (slip_id,),
-        )
-        legs = c.fetchall()
-        if not legs or any(result not in {"win", "loss", "push"} for result, _odds in legs):
-            continue
-
-        c.execute("SELECT stake FROM parley_slips WHERE id = ?", (slip_id,))
-        row = c.fetchone()
-        if not row:
-            continue
-        stake = float(row[0] or 0)
-        leg_results = [result for result, _odds in legs]
-
-        if "loss" in leg_results:
-            slip_result = "loss"
-            payout = 0.0
-            pnl = -stake
-        else:
-            effective_odds = 1.0
-            for leg_result, odds in legs:
-                if leg_result == "win":
-                    effective_odds *= float(odds or 1)
-            if effective_odds > 1:
-                slip_result = "win"
-                payout = stake * effective_odds
-                pnl = payout - stake
-            else:
-                slip_result = "push"
-                payout = stake
-                pnl = 0.0
-
-        c.execute(
-            """
-            UPDATE parley_slips
-            SET status = 'settled', result = ?, payout = ?, pnl = ?, settled_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (slip_result, payout, pnl, slip_id),
-        )
-        settled_slips.append((slip_id, slip_result, pnl))
+    settled_slips = _settle_ready_parley_slips(c, affected_slips)
 
     return settled_legs, settled_slips
 
@@ -236,6 +265,7 @@ def update_results(match_id, result=None, home_goals=None, away_goals=None, allo
         SELECT id, match_id, selection, market, odds, stake, range_code, quality
         FROM picks
         WHERE match_id IN ({",".join("?" for _ in match_ids)})
+          AND status IN ('pending', 'settled')
         """,
         match_ids,
     )

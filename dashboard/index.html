@@ -115,11 +115,46 @@ button.loss { color:var(--bad); border-color:#ef444433; }
 .history th,.history td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; font-size:.875rem; color:var(--muted); }
 .history th { color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-size:.75rem; }
 .empty-history { padding:18px; color:var(--muted); }
+.pagination { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; color:var(--muted); font-size:.875rem; }
+.pagination-buttons { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+.pagination-buttons button { min-width:34px; }
+.pagination-buttons button.on { color:var(--panel); background:var(--accent); border-color:var(--accent); }
+.pagination-buttons button:disabled { opacity:.4; cursor:not-allowed; color:var(--muted); border-color:var(--line); }
 .parley-pick { border-color:#3b82f633; }
 .parley-legs { display:grid; gap:12px; margin-top:14px; }
 .parley-leg { background:var(--panel-strong); border:1px solid var(--line); border-radius:12px; padding:12px; }
 .parley-leg strong { color:var(--ink); }
 .parley-leg small { display:block; color:var(--muted); margin:4px 0 8px; }
+.parley-history { background:var(--panel); border:1px solid var(--line); border-radius:16px; box-shadow:0 1px 3px var(--shadow); margin:24px 0; overflow:hidden; }
+.parley-history-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid var(--line); }
+.parley-history-heading span { display:block; color:var(--muted); font-size:.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+.parley-history-heading h2 { color:var(--ink); font-size:1.25rem; line-height:1.2; }
+.parley-history-heading p { color:var(--muted); max-width:460px; text-align:right; }
+.parley-history-list { display:grid; gap:14px; padding:16px; }
+.parley-history-card { background:var(--panel-strong); border:1px solid var(--line); border-left:5px solid var(--muted); border-radius:12px; padding:16px; }
+.parley-history-card.win { border-left-color:var(--good); }
+.parley-history-card.loss { border-left-color:var(--bad); }
+.parley-history-card.push { border-left-color:var(--warn); }
+.parley-history-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.parley-history-card-head span { color:var(--muted); font-size:.8rem; }
+.parley-history-card-head h3 { color:var(--ink); font-size:1.1rem; margin-top:2px; }
+.parley-outcome,.leg-outcome { display:inline-flex; align-items:center; justify-content:center; border-radius:9999px; font-weight:800; letter-spacing:.05em; }
+.parley-outcome { min-width:82px; padding:7px 12px; font-size:.8rem; }
+.parley-outcome.win,.leg-outcome.win { color:var(--good); background:#22c55e24; }
+.parley-outcome.loss,.leg-outcome.loss { color:var(--bad); background:#ef444424; }
+.parley-outcome.push,.leg-outcome.push { color:var(--warn); background:#f9731624; }
+.leg-outcome.pending { color:var(--muted); background:#f5efe412; }
+.parley-history-numbers { display:grid; grid-template-columns:repeat(5,minmax(105px,1fr)); gap:8px; margin-bottom:14px; }
+.parley-history-numbers div { background:var(--panel); border-radius:9px; padding:9px 10px; }
+.parley-history-numbers span { display:block; color:var(--muted); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+.parley-history-numbers strong { color:var(--ink); display:block; margin-top:2px; }
+.parley-history-legs { display:grid; gap:8px; }
+.parley-history-leg { display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px; }
+.leg-outcome { flex:0 0 92px; padding:5px 8px; font-size:.68rem; }
+.parley-history-leg-main { min-width:0; }
+.parley-history-leg-main strong { color:var(--ink); display:block; }
+.parley-history-leg-main small { color:var(--muted); display:block; margin-top:2px; }
+.parley-history-pagination { border-top:1px solid var(--line); }
 .h2h { margin-top:12px; margin-bottom:12px; }
 .h2h h3 { font-size:.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
 .h2h table { width:100%; border-collapse:collapse; font-size:.875rem; }
@@ -148,6 +183,9 @@ button.loss { color:var(--bad); border-color:#ef444433; }
   .numbers { width:100%; justify-content:space-between; }
   .actions { width:100%; justify-content:flex-start; }
   .pick-details { padding:14px 16px; }
+  .parley-history-heading { flex-direction:column; }
+  .parley-history-heading p { max-width:none; text-align:left; }
+  .parley-history-numbers { grid-template-columns:repeat(2,minmax(110px,1fr)); }
 }
 @media (max-width:520px) {
   .shell { padding:20px 12px 48px; }
@@ -160,9 +198,15 @@ button.loss { color:var(--bad); border-color:#ef444433; }
   .filter-bar { align-items:stretch; flex-direction:column; }
   .filter-select { width:100%; }
   .filter-count { margin-left:0; }
+  .pagination { align-items:flex-start; flex-direction:column; }
+  .pagination-buttons { justify-content:flex-start; }
   .numbers { justify-content:flex-start; }
   .numbers div { flex:1 1 88px; }
   .result { text-align:left; }
+  .parley-history-card-head { align-items:flex-start; flex-direction:column; }
+  .parley-history-numbers { grid-template-columns:1fr 1fr; }
+  .parley-history-leg { align-items:flex-start; flex-direction:column; }
+  .leg-outcome { flex-basis:auto; }
 }
 @media (min-width:640px) {
   .shell { padding:24px; }
@@ -179,7 +223,7 @@ button.loss { color:var(--bad); border-color:#ef444433; }
 <header class="site-header">
   <div class="brand">
     <h1>RolloStake</h1>
-    <p>Football edge intelligence &middot; Polymarket odds &middot; 7 picks &middot; generated Wednesday, May 20, 2026 at 15:24 Macau time</p>
+    <p>Football edge intelligence &middot; Polymarket odds &middot; 5 picks &middot; generated Sunday, September 13, 2026 at 14:01 Macau time</p>
   </div>
 </header>
 <main class="shell">
@@ -196,285 +240,220 @@ button.loss { color:var(--bad); border-color:#ef444433; }
     <p>Fixtures are fetched first. Picks are generated only where Polymarket odds are matched.</p>
   </div>
   <div class="performance-grid">
-    <div class="performance-card performance-leader"><span>Total</span><strong>30</strong><small>7 with odds</small><div>23 waiting for Polymarket coverage.</div></div>
-    <div class="performance-card"><span>EPL</span><strong>10</strong><small>0 with Polymarket odds</small><div>10 fixtures waiting for odds.</div></div><div class="performance-card"><span>LaLiga</span><strong>10</strong><small>4 with Polymarket odds</small><div>6 fixtures waiting for odds.</div></div><div class="performance-card"><span>SerieA</span><strong>10</strong><small>3 with Polymarket odds</small><div>7 fixtures waiting for odds.</div></div>
+    <div class="performance-card performance-leader"><span>Total</span><strong>28</strong><small>19 with odds</small><div>9 waiting for Polymarket coverage.</div></div>
+    <div class="performance-card"><span>Bundesliga</span><strong>2</strong><small>2 with Polymarket odds</small><div>0 fixtures waiting for odds.</div></div><div class="performance-card"><span>EPL</span><strong>3</strong><small>3 with Polymarket odds</small><div>0 fixtures waiting for odds.</div></div><div class="performance-card"><span>L1</span><strong>3</strong><small>3 with Polymarket odds</small><div>0 fixtures waiting for odds.</div></div><div class="performance-card"><span>LaLiga</span><strong>14</strong><small>5 with Polymarket odds</small><div>9 fixtures waiting for odds.</div></div><div class="performance-card"><span>SerieA</span><strong>6</strong><small>6 with Polymarket odds</small><div>0 fixtures waiting for odds.</div></div>
   </div>
 </section>
-<div class="history"><h2>Fetched Fixtures Without Polymarket Odds</h2><table><thead><tr><th>Kickoff</th><th>League</th><th>Match</th><th>Status</th></tr></thead><tbody><tr><td>2026-05-24 03:00</td><td>LaLiga</td><td>Celta vs Sevilla</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 03:00</td><td>LaLiga</td><td>Espanol vs Sociedad</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 03:00</td><td>LaLiga</td><td>Getafe vs Osasuna</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 03:00</td><td>LaLiga</td><td>Girona vs Elche</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 03:00</td><td>LaLiga</td><td>Real Madrid vs Ath Bilbao</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 21:00</td><td>SerieA</td><td>Parma vs Sassuolo</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Brighton vs Man United</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Burnley vs Wolves</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Crystal Palace vs Arsenal</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Fulham vs Newcastle</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Liverpool vs Brentford</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Man City vs Aston Villa</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Nott&#x27;m Forest vs Bournemouth</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Sunderland vs Chelsea</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>Tottenham vs Everton</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-24 23:00</td><td>EPL</td><td>West Ham vs Leeds</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-25 00:00</td><td>SerieA</td><td>Napoli vs Udinese</td><td>No Polymarket market matched yet</td></tr><tr><td>2026-05-25 02:45</td><td>SerieA</td><td>AC Milan vs Cagliari</td><td>No Polymarket market matched yet</td></tr></tbody></table></div>
+<div class="history fixture-odds-history" id="fixture-odds-history"><h2>Fetched Fixtures Without Polymarket Odds</h2><table><thead><tr><th>Kickoff</th><th>League</th><th>Match</th><th>Status</th></tr></thead><tbody id="fixture-odds-body"><tr class="fixture-odds-row"><td>2026-09-16 01:00</td><td>LaLiga</td><td>Vallecano vs Espanol</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-16 02:00</td><td>LaLiga</td><td>Alaves vs Valencia</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-16 03:30</td><td>LaLiga</td><td>Elche vs Real Madrid</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-17 01:00</td><td>LaLiga</td><td>Atletico Madrid vs Osasuna</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-17 01:00</td><td>LaLiga</td><td>La Coruna vs Sevilla</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-17 03:30</td><td>LaLiga</td><td>Barcelona vs Racing Santander</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-17 03:30</td><td>LaLiga</td><td>Levante vs Ath Bilbao</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-18 01:00</td><td>LaLiga</td><td>Betis vs Getafe</td><td>No Polymarket market matched yet</td></tr><tr class="fixture-odds-row"><td>2026-09-18 03:30</td><td>LaLiga</td><td>Malaga vs Villarreal</td><td>No Polymarket market matched yet</td></tr></tbody></table><div class="pagination fixture-pagination"><span id="fixture-page-status"></span><div id="fixture-page-buttons" class="pagination-buttons"></div></div></div>
 
 
 <section class="range on" id="range-D">
-  <section class="range-performance"><div class="performance-heading"><div><span>Settled performance</span><h2>Low Risk results</h2></div><p>27 settled picks in this risk band, split by quality.</p></div><div class="performance-grid"><div class="performance-card performance-leader"><span>Low Risk</span><strong class="good">+29.5%</strong><small>27 settled - 17W-9L-1P</small><div>Staked $270 / P&amp;L $+79.60</div></div><div class="performance-card"><span>STRONG</span><strong class="bad">-25.0%</strong><small>6 settled - 2W-3L-1P</small><div>Staked $60 / P&amp;L $-15.00</div></div><div class="performance-card"><span>KEEP</span><strong class="good">+41.8%</strong><small>20 settled - 14W-6L</small><div>Staked $200 / P&amp;L $+83.60</div></div><div class="performance-card"><span>CAUTION</span><strong class="good">+110.0%</strong><small>1 settled - 1W-0L</small><div>Staked $10 / P&amp;L $+11.00</div></div></div></section>
+  <section class="range-performance"><div class="performance-heading"><div><span>Settled performance</span><h2>Low Risk results</h2></div><p>67 settled picks in this risk band, split by quality.</p></div><div class="performance-grid"><div class="performance-card performance-leader"><span>Low Risk</span><strong class="good">+25.2%</strong><small>67 settled - 41W-25L-1P</small><div>Staked $670 / P&amp;L $+168.86</div></div><div class="performance-card"><span>STRONG</span><strong class="good">+6.2%</strong><small>8 settled - 4W-3L-1P</small><div>Staked $80 / P&amp;L $+4.92</div></div><div class="performance-card"><span>KEEP</span><strong class="good">+33.3%</strong><small>55 settled - 36W-19L</small><div>Staked $550 / P&amp;L $+182.94</div></div><div class="performance-card"><span>CAUTION</span><strong class="bad">-47.5%</strong><small>4 settled - 1W-3L</small><div>Staked $40 / P&amp;L $-19.00</div></div></div></section>
   <div class="pnl-bar">
     <div><span>Base Bank</span><strong>$100</strong></div>
     <div><span>Flat Stake</span><strong>$10</strong></div>
     <div><span>Odds Band</span><strong>1.70-2.70</strong></div>
     <div><span>Strong</span><strong class="good">3</strong></div>
-    <div><span>Keep</span><strong>3</strong></div>
-    <div><span>Caution</span><strong class="warn">1</strong></div>
-    <div><span>Record</span><strong id="D-record">17W-9L-1P</strong></div>
-    <div><span>Staked</span><strong id="D-staked">$270</strong></div>
-    <div><span>P&amp;L</span><strong id="D-pnl" class="good">$+79.60</strong></div>
-    <div><span>ROI</span><strong id="D-roi" class="good">+29.5%</strong></div>
-    <div><span>Bank</span><strong id="D-bank" class="good">$179.60</strong></div>
+    <div><span>Keep</span><strong>2</strong></div>
+    <div><span>Caution</span><strong class="warn">0</strong></div>
+    <div><span>Record</span><strong id="D-record">41W-25L-1P</strong></div>
+    <div><span>Staked</span><strong id="D-staked">$670</strong></div>
+    <div><span>P&amp;L</span><strong id="D-pnl" class="good">$+168.86</strong></div>
+    <div><span>ROI</span><strong id="D-roi" class="good">+25.2%</strong></div>
+    <div><span>Bank</span><strong id="D-bank" class="good">$268.86</strong></div>
   </div>
-  <div class="range-note">7 picks &middot; planned stake $70 &middot; 17 stake slots available from live bank &middot; correlated same-match exposure is flagged in each pick's risk note.</div>
+  <div class="range-note">5 picks &middot; planned stake $50 &middot; 26 stake slots available from live bank &middot; correlated same-match exposure is flagged in each pick's risk note.</div>
 
 <div class="filter-bar">
   <label for="D-filter">Filter by kickoff</label>
   <select id="D-filter" class="filter-select" onchange="filterRange('D', this.value)">
-    <option value="all">All dates</option><option value="2026-05-23">Sat May 23</option><option value="2026-05-24">Sun May 24</option>
+    <option value="all">All dates</option><option value="2026-09-13">Sun Sep 13</option><option value="2026-09-15">Tue Sep 15</option>
   </select>
-  <div class="filter-count">Showing <span id="D-visible">7</span> of 7 picks</div>
+  <div class="filter-count">Showing <span id="D-visible">5</span> of 5 picks</div>
 </div>
 
-  <div class="day-header" data-date="2026-05-23"><span>Sat May 23</span><small>1 picks</small></div>
-<div class="pick-card caution" id="pick-93" data-date="2026-05-23">
-  <div class="pick-summary" onclick="toggleDetails(93)">
+  <div class="day-header" data-date="2026-09-13"><span>Sun Sep 13</span><small>3 picks</small></div>
+<div class="pick-card keep" id="pick-133" data-date="2026-09-13">
+  <div class="pick-summary" onclick="toggleDetails(133)">
     <div class="rank">#1</div>
     <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">1X2</span>Atalanta Win <span class="badge caution">CAUTION</span></div>
-      <div class="pick-meta">Fiorentina vs Atalanta · <span>2026-05-23 02:45</span> · SerieA</div>
+      <div class="pick-title"><span class="market-pill">1X2</span>Celta Win <span class="badge keep">KEEP</span></div>
+      <div class="pick-meta">Celta vs Malaga · <span>2026-09-13 20:00</span> · LaLiga</div>
+
     </div>
     <div class="numbers">
-      <div><strong>@2.60</strong><span>Odds</span></div>
-      <div><strong class="good">+7.5%</strong><span>Edge</span></div>
+      <div><strong>@1.77</strong><span>Odds</span></div>
+      <div><strong class="good">+21.2%</strong><span>Edge</span></div>
       <div><strong>$10</strong><span>Stake</span></div>
     </div>
-    <div class="result" id="result-93">pending</div>
+    <div class="result" id="result-133">pending</div>
     <div class="actions">
-      <button class="win" onclick="event.stopPropagation(); markPick('D', 93, 'win')">WIN</button>
-      <button class="loss" onclick="event.stopPropagation(); markPick('D', 93, 'loss')">LOSS</button>
-      <button onclick="event.stopPropagation(); markPick('D', 93, 'push')">PUSH</button>
-      <button onclick="event.stopPropagation(); markPick('D', 93, 'pending')">RST</button>
+      <button class="win" onclick="event.stopPropagation(); markPick('D', 133, 'win')">WIN</button>
+      <button class="loss" onclick="event.stopPropagation(); markPick('D', 133, 'loss')">LOSS</button>
+      <button onclick="event.stopPropagation(); markPick('D', 133, 'push')">PUSH</button>
+      <button onclick="event.stopPropagation(); markPick('D', 133, 'pending')">RST</button>
     </div>
   </div>
-  <div class="pick-details" id="details-93">
-    <div class="reasoning">Model prices this at 41.4% versus bookmaker implied 38.5%, creating +7.5% edge. 1X2 value should be manually checked against injuries, motivation, and likely rotation. External context: H2H downgrades pick (3/5 recent misses); fixture congestion supports pick. Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check team news and odds movement before kickoff.</div>
+  <div class="pick-details" id="details-133">
+    <div class="reasoning">Model prices this at 68.5% versus bookmaker implied 56.5%, creating +21.2% edge. 1X2 value should be manually checked against injuries, motivation, and likely rotation. External context: fixture congestion downgrades pick; injury/suspension news supports pick (2 backed-team, 6 opponent items); prediction adjustment note loaded (14-layer model | L1 Rolling blend: home form blend 2.09-&gt;1.74; away form blend 0.29-&gt;0.49; L7 Injuries: Celta: 2 rows, Malaga: 6 rows; Celta depth 28 (3G/11D/8M/6F); Malaga depth 31 (2G/11D/10M/8F); L10 Rest days: Celta full rest (10d); Malaga full rest (14d)). Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check team news and odds movement before kickoff.</div>
     <div class="metrics">
-      <span>Model <strong>41.4%</strong></span>
-      <span>Book <strong>38.5%</strong></span>
-      <span>Win <strong class="good">+$16</strong></span>
+      <span>Model <strong>68.5%</strong></span>
+      <span>Book <strong>56.5%</strong></span>
+      <span>Win <strong class="good">+$8</strong></span>
       <span>Lose <strong class="bad">-$10</strong></span>
     </div>
-    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2025-03-30</td><td>Fiorentina 1-0 Atalanta</td><td>H</td></tr><tr><td>2024-09-15</td><td>Atalanta 3-2 Fiorentina</td><td>H</td></tr><tr><td>2024-06-02</td><td>Atalanta 2-3 Fiorentina</td><td>A</td></tr><tr><td>2023-09-17</td><td>Fiorentina 3-2 Atalanta</td><td>H</td></tr><tr><td>2023-04-17</td><td>Fiorentina 1-1 Atalanta</td><td>D</td></tr></tbody></table></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-d">D</span><small>Inter Milan 1-1</small><span class="form-l">L</span><small>Inter Milan 0-3</small><span class="form-w">W</span><small>Udinese 3-2</small><span class="form-w">W</span><small>Bologna 3-2</small><span class="form-l">L</span><small>Venezia 1-2</small></div></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-d">D</span><small>Inter Milan 1-1</small><span class="form-l">L</span><small>Inter Milan 0-1</small><span class="form-l">L</span><small>Parma 2-3</small><span class="form-w">W</span><small>Genoa 3-2</small><span class="form-w">W</span><small>Roma 2-1</small></div></div>
 
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-d">D</span><small>Sociedad 0-0</small><span class="form-l">L</span><small>Ath Bilbao 0-2</small><span class="form-l">L</span><small>Ath Bilbao 0-2</small><span class="form-l">L</span><small>Osasuna 1-2</small><span class="form-l">L</span><small>Osasuna 1-2</small></div></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Real Madrid 0-4</small><span class="form-d">D</span><small>La Coruna 1-1</small><span class="form-d">D</span><small>La Coruna 1-1</small><span class="form-l">L</span><small>Atletico Madrid 0-2</small><span class="form-l">L</span><small>Ath Madrid 0-2</small></div></div>
+    <div class="news-block"><small><strong>Celta:</strong> Aleix Febas (doubtful); Stefan Bajcetic (doubtful)</small><br><small><strong>Malaga:</strong> Adrian Nino (doubtful); Calero (doubtful); Diego Murillo (doubtful) +3 more</small></div>
   </div>
 </div>
-<div class="day-header" data-date="2026-05-24"><span>Sun May 24</span><small>6 picks</small></div>
-<div class="pick-card keep" id="pick-94" data-date="2026-05-24">
-  <div class="pick-summary" onclick="toggleDetails(94)">
+
+<div class="pick-card strong" id="pick-134" data-date="2026-09-13">
+  <div class="pick-summary" onclick="toggleDetails(134)">
     <div class="rank">#2</div>
     <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">OU</span>Over 3.5 <span class="badge keep">KEEP</span></div>
-      <div class="pick-meta">Bologna vs Inter Milan · <span>2026-05-24 00:00</span> · SerieA</div>
-    </div>
-    <div class="numbers">
-      <div><strong>@2.60</strong><span>Odds</span></div>
-      <div><strong class="good">+20.5%</strong><span>Edge</span></div>
-      <div><strong>$10</strong><span>Stake</span></div>
-    </div>
-    <div class="result" id="result-94">pending</div>
-    <div class="actions">
-      <button class="win" onclick="event.stopPropagation(); markPick('D', 94, 'win')">WIN</button>
-      <button class="loss" onclick="event.stopPropagation(); markPick('D', 94, 'loss')">LOSS</button>
-      <button onclick="event.stopPropagation(); markPick('D', 94, 'push')">PUSH</button>
-      <button onclick="event.stopPropagation(); markPick('D', 94, 'pending')">RST</button>
-    </div>
-  </div>
-  <div class="pick-details" id="details-94">
-    <div class="reasoning">Model prices this at 46.4% versus bookmaker implied 38.5%, creating +20.5% edge. Goals market should be manually checked against fatigue, tactical setup, and recent scoring profiles. External context: H2H supports goals (avg 2.8). Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check lineup and fatigue news before kickoff.</div>
-    <div class="metrics">
-      <span>Model <strong>46.4%</strong></span>
-      <span>Book <strong>38.5%</strong></span>
-      <span>Win <strong class="good">+$16</strong></span>
-      <span>Lose <strong class="bad">-$10</strong></span>
-    </div>
-    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2026-01-04</td><td>Inter Milan 3-1 Bologna</td><td>H</td></tr><tr><td>2025-04-20</td><td>Bologna 1-0 Inter Milan</td><td>H</td></tr><tr><td>2025-01-15</td><td>Inter Milan 2-2 Bologna</td><td>D</td></tr><tr><td>2024-03-09</td><td>Bologna 0-1 Inter Milan</td><td>A</td></tr><tr><td>2023-10-07</td><td>Inter Milan 2-2 Bologna</td><td>D</td></tr></tbody></table></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Inter Milan 1-3</small><span class="form-l">L</span><small>Genoa 1-3</small><span class="form-l">L</span><small>Fiorentina 2-3</small><span class="form-l">L</span><small>Milan 1-3</small><span class="form-d">D</span><small>Juventus 1-1</small></div></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-w">W</span><small>Cagliari 3-0</small><span class="form-w">W</span><small>Como 4-3</small><span class="form-w">W</span><small>Roma 5-2</small><span class="form-d">D</span><small>Fiorentina 1-1</small><span class="form-d">D</span><small>Atalanta 1-1</small></div></div>
+      <div class="pick-title"><span class="market-pill">AH</span>Hamburg AH +1.5 <span class="badge strong">STRONG</span></div>
+      <div class="pick-meta">RB Leipzig vs Hamburg · <span>2026-09-13 21:30</span> · Bundesliga</div>
 
-  </div>
-</div>
-
-<div class="pick-card strong" id="pick-95" data-date="2026-05-24">
-  <div class="pick-summary" onclick="toggleDetails(95)">
-    <div class="rank">#3</div>
-    <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">BTTS</span>BTTS Yes <span class="badge strong">STRONG</span></div>
-      <div class="pick-meta">Lazio vs Pisa · <span>2026-05-24 02:45</span> · SerieA</div>
     </div>
     <div class="numbers">
       <div><strong>@1.98</strong><span>Odds</span></div>
-      <div><strong class="good">+45.4%</strong><span>Edge</span></div>
+      <div><strong class="good">+76.6%</strong><span>Edge</span></div>
       <div><strong>$10</strong><span>Stake</span></div>
     </div>
-    <div class="result" id="result-95">pending</div>
+    <div class="result" id="result-134">pending</div>
     <div class="actions">
-      <button class="win" onclick="event.stopPropagation(); markPick('D', 95, 'win')">WIN</button>
-      <button class="loss" onclick="event.stopPropagation(); markPick('D', 95, 'loss')">LOSS</button>
-      <button onclick="event.stopPropagation(); markPick('D', 95, 'push')">PUSH</button>
-      <button onclick="event.stopPropagation(); markPick('D', 95, 'pending')">RST</button>
+      <button class="win" onclick="event.stopPropagation(); markPick('D', 134, 'win')">WIN</button>
+      <button class="loss" onclick="event.stopPropagation(); markPick('D', 134, 'loss')">LOSS</button>
+      <button onclick="event.stopPropagation(); markPick('D', 134, 'push')">PUSH</button>
+      <button onclick="event.stopPropagation(); markPick('D', 134, 'pending')">RST</button>
     </div>
   </div>
-  <div class="pick-details" id="details-95">
-    <div class="reasoning">Model prices this at 73.4% versus bookmaker implied 50.5%, creating +45.4% edge. BTTS value should be manually checked against both teams&#x27; scoring and clean-sheet trends. Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check lineup and fatigue news before kickoff.</div>
+  <div class="pick-details" id="details-134">
+    <div class="reasoning">Model prices this at 89.2% versus bookmaker implied 50.5%, creating +76.6% edge. Asian handicap value should be checked for push rules, lineup strength, and game-state risk. External context: fixture congestion supports pick; injury/suspension news supports pick (4 backed-team, 6 opponent items); prediction adjustment note loaded (14-layer model | L1 Rolling blend: early-season carryover: last six matches within 365d; home form blend 0.67-&gt;0.92; L2 Elo SoS: Elo 1588-1504, SoS 1531-1522; L4 Motivation: RB Leipzig top-table motivation; L7 Injuries: RB Leipzig: 6 rows, Hamburg: 4 rows; RB Leipzig depth 29 (3G/9D/10M/7F); Hamburg depth 30 (3G/11D/10M/6F); L8 Euro fatigue: RB Leipzig CL match 3d ago; L10 Rest days: RB Leipzig rest-days blocked by euro/cup fatigue layer; Hamburg full rest (15d)). Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check exact handicap line, push rules, and team news before kickoff.</div>
     <div class="metrics">
-      <span>Model <strong>73.4%</strong></span>
+      <span>Model <strong>89.2%</strong></span>
       <span>Book <strong>50.5%</strong></span>
       <span>Win <strong class="good">+$10</strong></span>
       <span>Lose <strong class="bad">-$10</strong></span>
     </div>
 
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Inter Milan 0-2</small><span class="form-l">L</span><small>Lecce 0-1</small><span class="form-d">D</span><small>Inter 2-2</small><span class="form-d">D</span><small>Inter Milan 2-2</small><span class="form-d">D</span><small>Juventus 1-1</small></div></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Inter Milan 2-6</small><span class="form-l">L</span><small>Inter Milan 0-2</small></div></div>
-
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Como 1-4</small><span class="form-w">W</span><small>M&#x27;gladbach 3-0</small><span class="form-w">W</span><small>Borussia M&#x27;gladbach 1-0</small><span class="form-l">L</span><small>Mainz 05 1-2</small><span class="form-d">D</span><small>Borussia M&#x27;gladbach 0-0</small></div></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Dortmund 0-2</small><span class="form-d">D</span><small>Mainz 05 1-1</small><span class="form-d">D</span><small>Borussia M&#x27;gladbach 0-0</small><span class="form-w">W</span><small>Mainz 05 4-0</small><span class="form-d">D</span><small>Borussia M&#x27;gladbach 0-0</small></div></div>
+    <div class="news-block"><small><strong>RB Leipzig:</strong> Assan Ouedraogo (doubtful); Brajan Gruda (doubtful); Castello Lukeba (doubtful) +3 more</small><br><small><strong>Hamburg:</strong> Miro Muheim (doubtful); Sebastiaan Bornauw (doubtful); Warmed Omari (doubtful) +1 more</small></div>
   </div>
 </div>
 
-<div class="pick-card strong" id="pick-96" data-date="2026-05-24">
-  <div class="pick-summary" onclick="toggleDetails(96)">
+<div class="pick-card keep" id="pick-135" data-date="2026-09-13">
+  <div class="pick-summary" onclick="toggleDetails(135)">
+    <div class="rank">#3</div>
+    <div class="pick-main">
+      <div class="pick-title"><span class="market-pill">TT</span>Levante O0.5 <span class="badge keep">KEEP</span></div>
+      <div class="pick-meta">Levante vs Barcelona · <span>2026-09-13 22:15</span> · LaLiga</div>
+
+    </div>
+    <div class="numbers">
+      <div><strong>@1.82</strong><span>Odds</span></div>
+      <div><strong class="good">+23.5%</strong><span>Edge</span></div>
+      <div><strong>$10</strong><span>Stake</span></div>
+    </div>
+    <div class="result" id="result-135">pending</div>
+    <div class="actions">
+      <button class="win" onclick="event.stopPropagation(); markPick('D', 135, 'win')">WIN</button>
+      <button class="loss" onclick="event.stopPropagation(); markPick('D', 135, 'loss')">LOSS</button>
+      <button onclick="event.stopPropagation(); markPick('D', 135, 'push')">PUSH</button>
+      <button onclick="event.stopPropagation(); markPick('D', 135, 'pending')">RST</button>
+    </div>
+  </div>
+  <div class="pick-details" id="details-135">
+    <div class="reasoning">Model prices this at 67.9% versus bookmaker implied 55.0%, creating +23.5% edge. Goals market should be manually checked against fatigue, tactical setup, and recent scoring profiles. External context: table goal profile supports goals (3.2); fixture congestion downgrades pick; attack/defence news supports goals (0 attack, 5 defence items); prediction adjustment note loaded (14-layer model | L1 Rolling blend: away form blend 3.90-&gt;3.14; L2 Elo SoS: Elo 1445-1759, SoS 1581-1545; L3 Finishing quality: xG unavailable for Levante, Barcelona; verified goal-history proxy used; Barcelona recent finishing hot, mean-revert (+0.83/g); L4 Motivation: Barcelona top-table motivation; L7 Injuries: Levante: 2 rows, Barcelona: 3 rows; Levante depth 28 (4G/11D/7M/6F); Barcelona depth 29 (4G/9D/8M/8F); L8 Euro fatigue: Barcelona CL match 4d ago; L10 Rest days: Levante full rest (15d); Barcelona rest-days blocked by euro/cup fatigue layer; L12 Luck regression: Levante positive goal-diff luck regresses (+0.62/g); Barcelona positive goal-diff luck regresses (+0.75/g)). Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check lineup and fatigue news before kickoff.</div>
+    <div class="metrics">
+      <span>Model <strong>67.9%</strong></span>
+      <span>Book <strong>55.0%</strong></span>
+      <span>Win <strong class="good">+$8</strong></span>
+      <span>Lose <strong class="bad">-$10</strong></span>
+    </div>
+    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2022-04-10</td><td>Levante 2-3 Barcelona</td><td>A</td></tr><tr><td>2021-09-26</td><td>Barcelona 3-0 Levante</td><td>H</td></tr></tbody></table></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-w">W</span><small>Betis 5-2</small><span class="form-d">D</span><small>Osasuna 0-0</small><span class="form-d">D</span><small>Osasuna 0-0</small><span class="form-l">L</span><small>Espanol 0-3</small><span class="form-l">L</span><small>Espanol 0-3</small></div></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-w">W</span><small>Feyenoord Rotterdam 5-1</small><span class="form-w">W</span><small>Valencia 5-0</small><span class="form-w">W</span><small>Vallecano 5-2</small><span class="form-w">W</span><small>Ath Bilbao 2-0</small><span class="form-w">W</span><small>Ath Bilbao 2-0</small></div></div>
+    <div class="news-block"><small><strong>Levante:</strong> Alejandro Primo (injured); Karl Etta (injured)</small><br><small><strong>Barcelona:</strong> Eric Garcia (injured); Frenkie de Jong (injured); Roony Bardghji (injured)</small></div>
+  </div>
+</div>
+<div class="day-header" data-date="2026-09-15"><span>Tue Sep 15</span><small>2 picks</small></div>
+<div class="pick-card strong" id="pick-136" data-date="2026-09-15">
+  <div class="pick-summary" onclick="toggleDetails(136)">
     <div class="rank">#4</div>
     <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">BTTS</span>BTTS No <span class="badge strong">STRONG</span></div>
-      <div class="pick-meta">Alaves vs Vallecano · <span>2026-05-24 03:00</span> · LaLiga</div>
+      <div class="pick-title"><span class="market-pill">AH</span>Parma AH +1.5 <span class="badge strong">STRONG</span></div>
+      <div class="pick-meta">Como vs Parma · <span>2026-09-15 00:30</span> · SerieA</div>
+
     </div>
     <div class="numbers">
-      <div><strong>@2.17</strong><span>Odds</span></div>
-      <div><strong class="good">+53.9%</strong><span>Edge</span></div>
+      <div><strong>@2.27</strong><span>Odds</span></div>
+      <div><strong class="good">+56.5%</strong><span>Edge</span></div>
       <div><strong>$10</strong><span>Stake</span></div>
     </div>
-    <div class="result" id="result-96">pending</div>
+    <div class="result" id="result-136">pending</div>
     <div class="actions">
-      <button class="win" onclick="event.stopPropagation(); markPick('D', 96, 'win')">WIN</button>
-      <button class="loss" onclick="event.stopPropagation(); markPick('D', 96, 'loss')">LOSS</button>
-      <button onclick="event.stopPropagation(); markPick('D', 96, 'push')">PUSH</button>
-      <button onclick="event.stopPropagation(); markPick('D', 96, 'pending')">RST</button>
+      <button class="win" onclick="event.stopPropagation(); markPick('D', 136, 'win')">WIN</button>
+      <button class="loss" onclick="event.stopPropagation(); markPick('D', 136, 'loss')">LOSS</button>
+      <button onclick="event.stopPropagation(); markPick('D', 136, 'push')">PUSH</button>
+      <button onclick="event.stopPropagation(); markPick('D', 136, 'pending')">RST</button>
     </div>
   </div>
-  <div class="pick-details" id="details-96">
-    <div class="reasoning">Model prices this at 70.8% versus bookmaker implied 46.0%, creating +53.9% edge. BTTS value should be manually checked against both teams&#x27; scoring and clean-sheet trends. External context: H2H supports lower scoring (avg 1.4); fixture congestion supports pick. Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check lineup and fatigue news before kickoff.</div>
+  <div class="pick-details" id="details-136">
+    <div class="reasoning">Model prices this at 68.9% versus bookmaker implied 44.0%, creating +56.5% edge. Asian handicap value should be checked for push rules, lineup strength, and game-state risk. External context: fixture congestion supports pick; injury/suspension news downgrades pick (4 backed-team, 1 opponent items); prediction adjustment note loaded (14-layer model | L2 Elo SoS: Elo 1553-1456, SoS 1588-1563; L4 Motivation: Parma relegation-pressure motivation; L7 Injuries: Como: 1 rows, Parma: 4 rows; Como depth 28 (4G/10D/9M/5F); Parma depth 31 (5G/10D/8M/8F); L8 Euro fatigue: Como CL match 4d ago; L10 Rest days: Como rest-days blocked by euro/cup fatigue layer; Parma full rest (16d)). Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check exact handicap line, push rules, and team news before kickoff.</div>
     <div class="metrics">
-      <span>Model <strong>70.8%</strong></span>
-      <span>Book <strong>46.0%</strong></span>
-      <span>Win <strong class="good">+$12</strong></span>
+      <span>Model <strong>68.9%</strong></span>
+      <span>Book <strong>44.0%</strong></span>
+      <span>Win <strong class="good">+$13</strong></span>
       <span>Lose <strong class="bad">-$10</strong></span>
     </div>
-    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2025-03-29</td><td>Alaves 0-2 Vallecano</td><td>A</td></tr><tr><td>2024-10-26</td><td>Vallecano 1-0 Alaves</td><td>H</td></tr><tr><td>2024-03-10</td><td>Alaves 1-0 Vallecano</td><td>H</td></tr><tr><td>2023-09-15</td><td>Vallecano 2-0 Alaves</td><td>H</td></tr><tr><td>2022-04-16</td><td>Alaves 1-0 Vallecano</td><td>H</td></tr></tbody></table></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Atletico Madrid 0-1</small><span class="form-w">W</span><small>Athletic Bilbao 1-0</small><span class="form-d">D</span><small>Atletico Madrid 1-1</small><span class="form-d">D</span><small>Osasuna 1-1</small><span class="form-w">W</span><small>Valladolid 1-0</small></div></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-d">D</span><small>Athletic Bilbao 1-1</small><span class="form-w">W</span><small>Atletico Madrid 3-0</small><span class="form-l">L</span><small>Atletico Madrid 2-3</small><span class="form-l">L</span><small>Athletic Bilbao 0-1</small><span class="form-d">D</span><small>Mallorca 0-0</small></div></div>
-
+    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2025-05-03</td><td>Parma 0-1 Como</td><td>A</td></tr><tr><td>2024-10-19</td><td>Como 1-1 Parma</td><td>D</td></tr></tbody></table></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-w">W</span><small>RB Leipzig 4-1</small><span class="form-w">W</span><small>Genoa 4-1</small><span class="form-w">W</span><small>Napoli 2-1</small><span class="form-w">W</span><small>Napoli 2-1</small><span class="form-d">D</span><small>Udinese 1-1</small></div></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Juventus 0-2</small><span class="form-l">L</span><small>Cagliari 0-1</small><span class="form-l">L</span><small>Cagliari 0-1</small><span class="form-w">W</span><small>Sassuolo 1-0</small><span class="form-l">L</span><small>Inter Milan 0-2</small></div></div>
+    <div class="news-block"><small><strong>Como:</strong> Jayden Addai (injured)</small><br><small><strong>Parma:</strong> Adrian Bernabe (doubtful); Ousmane Diallo (doubtful); Sascha Britschgi (doubtful) +1 more</small></div>
   </div>
 </div>
 
-<div class="pick-card strong" id="pick-97" data-date="2026-05-24">
-  <div class="pick-summary" onclick="toggleDetails(97)">
+<div class="pick-card strong" id="pick-137" data-date="2026-09-15">
+  <div class="pick-summary" onclick="toggleDetails(137)">
     <div class="rank">#5</div>
     <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">AH</span>Real Oviedo AH +1.5 <span class="badge strong">STRONG</span></div>
-      <div class="pick-meta">Mallorca vs Real Oviedo · <span>2026-05-24 03:00</span> · LaLiga</div>
+      <div class="pick-title"><span class="market-pill">TT</span>Villarreal O0.5 <span class="badge strong">STRONG</span></div>
+      <div class="pick-meta">Villarreal vs Betis · <span>2026-09-15 03:00</span> · LaLiga</div>
+
     </div>
     <div class="numbers">
-      <div><strong>@1.71</strong><span>Odds</span></div>
-      <div><strong class="good">+34.0%</strong><span>Edge</span></div>
+      <div><strong>@1.83</strong><span>Odds</span></div>
+      <div><strong class="good">+56.5%</strong><span>Edge</span></div>
       <div><strong>$10</strong><span>Stake</span></div>
     </div>
-    <div class="result" id="result-97">pending</div>
+    <div class="result" id="result-137">pending</div>
     <div class="actions">
-      <button class="win" onclick="event.stopPropagation(); markPick('D', 97, 'win')">WIN</button>
-      <button class="loss" onclick="event.stopPropagation(); markPick('D', 97, 'loss')">LOSS</button>
-      <button onclick="event.stopPropagation(); markPick('D', 97, 'push')">PUSH</button>
-      <button onclick="event.stopPropagation(); markPick('D', 97, 'pending')">RST</button>
+      <button class="win" onclick="event.stopPropagation(); markPick('D', 137, 'win')">WIN</button>
+      <button class="loss" onclick="event.stopPropagation(); markPick('D', 137, 'loss')">LOSS</button>
+      <button onclick="event.stopPropagation(); markPick('D', 137, 'push')">PUSH</button>
+      <button onclick="event.stopPropagation(); markPick('D', 137, 'pending')">RST</button>
     </div>
   </div>
-  <div class="pick-details" id="details-97">
-    <div class="reasoning">Model prices this at 78.4% versus bookmaker implied 58.5%, creating +34.0% edge. Asian handicap value should be checked for push rules, lineup strength, and game-state risk. External context: fixture congestion supports pick. Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check exact handicap line, push rules, and team news before kickoff.</div>
+  <div class="pick-details" id="details-137">
+    <div class="reasoning">Model prices this at 85.3% versus bookmaker implied 54.5%, creating +56.5% edge. Goals market should be manually checked against fatigue, tactical setup, and recent scoring profiles. External context: H2H supports goals (avg 3.2); fixture congestion downgrades pick; attack/defence news supports goals (0 attack, 5 defence items); prediction adjustment note loaded (14-layer model | L1 Rolling blend: away form blend 1.15-&gt;1.37; L2 Elo SoS: Elo 1632-1604, SoS 1568-1583; L4 Motivation: Betis top-table motivation; L7 Injuries: Villarreal: 2 rows, Betis: 3 rows; Villarreal depth 27 (4G/7D/7M/9F); Betis depth 28 (4G/8D/9M/7F)). Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check lineup and fatigue news before kickoff.</div>
     <div class="metrics">
-      <span>Model <strong>78.4%</strong></span>
-      <span>Book <strong>58.5%</strong></span>
-      <span>Win <strong class="good">+$7</strong></span>
+      <span>Model <strong>85.3%</strong></span>
+      <span>Book <strong>54.5%</strong></span>
+      <span>Win <strong class="good">+$8</strong></span>
       <span>Lose <strong class="bad">-$10</strong></span>
     </div>
-
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Atletico Madrid 0-3</small><span class="form-w">W</span><small>Athletic Bilbao 3-2</small><span class="form-l">L</span><small>Athletic Bilbao 1-2</small><span class="form-d">D</span><small>Atletico Madrid 1-1</small><span class="form-d">D</span><small>Vallecano 0-0</small></div></div>
-
-
+    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2025-04-13</td><td>Betis 1-2 Villarreal</td><td>A</td></tr><tr><td>2024-12-15</td><td>Villarreal 1-2 Betis</td><td>A</td></tr><tr><td>2024-03-10</td><td>Betis 2-3 Villarreal</td><td>A</td></tr><tr><td>2023-08-13</td><td>Villarreal 1-2 Betis</td><td>A</td></tr><tr><td>2023-03-12</td><td>Villarreal 1-1 Betis</td><td>D</td></tr></tbody></table></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Dortmund 2-3</small><span class="form-l">L</span><small>Alaves 0-1</small><span class="form-d">D</span><small>Atletico Madrid 2-2</small><span class="form-d">D</span><small>Ath Madrid 2-2</small><span class="form-d">D</span><small>Racing Santander 2-2</small></div></div>
+    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-w">W</span><small>Lille 3-2</small><span class="form-w">W</span><small>Real Madrid 1-0</small><span class="form-w">W</span><small>Real Madrid 1-0</small><span class="form-l">L</span><small>Levante 2-5</small><span class="form-w">W</span><small>Valencia 1-0</small></div></div>
+    <div class="news-block"><small><strong>Villarreal:</strong> Carlos Romero (injured); Juan Foyth (injured)</small><br><small><strong>Betis:</strong> Aitor Ruibal (injured); Diego Llorente (injured); Ez Abde (injured)</small></div>
   </div>
 </div>
 
-<div class="pick-card keep" id="pick-98" data-date="2026-05-24">
-  <div class="pick-summary" onclick="toggleDetails(98)">
-    <div class="rank">#6</div>
-    <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">OU</span>Under 2.5 <span class="badge keep">KEEP</span></div>
-      <div class="pick-meta">Betis vs Levante · <span>2026-05-24 03:00</span> · LaLiga</div>
-    </div>
-    <div class="numbers">
-      <div><strong>@2.41</strong><span>Odds</span></div>
-      <div><strong class="good">+22.6%</strong><span>Edge</span></div>
-      <div><strong>$10</strong><span>Stake</span></div>
-    </div>
-    <div class="result" id="result-98">pending</div>
-    <div class="actions">
-      <button class="win" onclick="event.stopPropagation(); markPick('D', 98, 'win')">WIN</button>
-      <button class="loss" onclick="event.stopPropagation(); markPick('D', 98, 'loss')">LOSS</button>
-      <button onclick="event.stopPropagation(); markPick('D', 98, 'push')">PUSH</button>
-      <button onclick="event.stopPropagation(); markPick('D', 98, 'pending')">RST</button>
-    </div>
-  </div>
-  <div class="pick-details" id="details-98">
-    <div class="reasoning">Model prices this at 50.9% versus bookmaker implied 41.5%, creating +22.6% edge. Goals market should be manually checked against fatigue, tactical setup, and recent scoring profiles. External context: fixture congestion supports pick. Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check lineup and fatigue news before kickoff.</div>
-    <div class="metrics">
-      <span>Model <strong>50.9%</strong></span>
-      <span>Book <strong>41.5%</strong></span>
-      <span>Win <strong class="good">+$14</strong></span>
-      <span>Lose <strong class="bad">-$10</strong></span>
-    </div>
-    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2022-02-13</td><td>Levante 2-4 Betis</td><td>A</td></tr><tr><td>2021-11-28</td><td>Betis 3-1 Levante</td><td>H</td></tr></tbody></table></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Athletic Bilbao 1-2</small><span class="form-w">W</span><small>Atletico Madrid 1-0</small><span class="form-l">L</span><small>Atletico Madrid 0-2</small><span class="form-l">L</span><small>Athletic Bilbao 1-2</small><span class="form-d">D</span><small>Valencia 1-1</small></div></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Athletic Bilbao 2-4</small><span class="form-d">D</span><small>Atletico Madrid 0-0</small><span class="form-l">L</span><small>Athletic Bilbao 0-2</small><span class="form-l">L</span><small>Atletico Madrid 1-3</small><span class="form-w">W</span><small>Vallecano 4-2</small></div></div>
-
-  </div>
-</div>
-
-<div class="pick-card keep" id="pick-99" data-date="2026-05-24">
-  <div class="pick-summary" onclick="toggleDetails(99)">
-    <div class="rank">#7</div>
-    <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">OU</span>Over 3.5 <span class="badge keep">KEEP</span></div>
-      <div class="pick-meta">Valencia vs Barcelona · <span>2026-05-24 03:00</span> · LaLiga</div>
-    </div>
-    <div class="numbers">
-      <div><strong>@2.25</strong><span>Odds</span></div>
-      <div><strong class="good">+16.3%</strong><span>Edge</span></div>
-      <div><strong>$10</strong><span>Stake</span></div>
-    </div>
-    <div class="result" id="result-99">pending</div>
-    <div class="actions">
-      <button class="win" onclick="event.stopPropagation(); markPick('D', 99, 'win')">WIN</button>
-      <button class="loss" onclick="event.stopPropagation(); markPick('D', 99, 'loss')">LOSS</button>
-      <button onclick="event.stopPropagation(); markPick('D', 99, 'push')">PUSH</button>
-      <button onclick="event.stopPropagation(); markPick('D', 99, 'pending')">RST</button>
-    </div>
-  </div>
-  <div class="pick-details" id="details-99">
-    <div class="reasoning">Model prices this at 51.8% versus bookmaker implied 44.5%, creating +16.3% edge. Goals market should be manually checked against fatigue, tactical setup, and recent scoring profiles. External context: H2H supports goals (avg 4.0); fixture congestion downgrades pick. Low Risk candidate by odds profile.<br><br><strong>Risk:</strong> Check lineup and fatigue news before kickoff.</div>
-    <div class="metrics">
-      <span>Model <strong>51.8%</strong></span>
-      <span>Book <strong>44.5%</strong></span>
-      <span>Win <strong class="good">+$12</strong></span>
-      <span>Lose <strong class="bad">-$10</strong></span>
-    </div>
-    <div class="h2h"><h3>Head-to-Head</h3><table><thead><tr><th>Date</th><th>Match</th><th>W</th></tr></thead><tbody><tr><td>2025-01-26</td><td>Barcelona 7-1 Valencia</td><td>H</td></tr><tr><td>2024-08-17</td><td>Valencia 1-2 Barcelona</td><td>A</td></tr><tr><td>2024-04-29</td><td>Barcelona 4-2 Valencia</td><td>H</td></tr><tr><td>2023-12-16</td><td>Valencia 1-1 Barcelona</td><td>D</td></tr><tr><td>2023-03-05</td><td>Barcelona 1-0 Valencia</td><td>H</td></tr></tbody></table></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-l">L</span><small>Atletico Madrid 1-2</small><span class="form-w">W</span><small>Athletic Bilbao 2-0</small><span class="form-d">D</span><small>Betis 1-1</small><span class="form-l">L</span><small>Ath Bilbao 0-1</small><span class="form-l">L</span><small>Athletic Bilbao 0-1</small></div></div>
-    <div class="recent-form"><h3>Recent Form</h3><div class="form-row"><span class="form-w">W</span><small>Atletico Madrid 2-1</small><span class="form-w">W</span><small>Athletic Bilbao 1-0</small><span class="form-w">W</span><small>Atletico Madrid 3-1</small><span class="form-w">W</span><small>Athletic Bilbao 4-0</small><span class="form-d">D</span><small>Real Madrid 1-1</small></div></div>
-
-  </div>
-</div>
-
-  <div class="history"><h2>Low Risk History</h2><table><thead><tr><th>Played</th><th>Risk Band</th><th>Quality</th><th>Match</th><th>Pick</th><th>Result</th><th>P&L</th><th>Cumulative</th></tr></thead><tbody><tr><td>2026-05-05 00:30</td><td>Low Risk</td><td>KEEP</td><td>Cremonese vs Lazio</td><td>Lazio Win</td><td>win</td><td>$+15</td><td>$+15</td></tr><tr><td>2026-05-09 02:30</td><td>Low Risk</td><td>STRONG</td><td>Dortmund vs Ein Frankfurt</td><td>Dortmund Win</td><td>win</td><td>$+7</td><td>$+22</td></tr><tr><td>2026-05-09 21:30</td><td>Low Risk</td><td>STRONG</td><td>RB Leipzig vs St Pauli</td><td>Under 3.0</td><td>push</td><td>$+0</td><td>$+22</td></tr><tr><td>2026-05-09 22:00</td><td>Low Risk</td><td>KEEP</td><td>Brighton vs Wolves</td><td>Wolves U0.5</td><td>win</td><td>$+10</td><td>$+32</td></tr><tr><td>2026-05-09 22:00</td><td>Low Risk</td><td>KEEP</td><td>Fulham vs Bournemouth</td><td>Fulham U1.5</td><td>win</td><td>$+8</td><td>$+40</td></tr><tr><td>2026-05-10 00:00</td><td>Low Risk</td><td>STRONG</td><td>Lazio vs Inter Milan</td><td>Inter Milan Win</td><td>win</td><td>$+8</td><td>$+48</td></tr><tr><td>2026-05-10 02:45</td><td>Low Risk</td><td>KEEP</td><td>Lecce vs Juventus</td><td>BTTS No</td><td>win</td><td>$+8</td><td>$+56</td></tr><tr><td>2026-05-10 03:00</td><td>Low Risk</td><td>STRONG</td><td>Sociedad vs Betis</td><td>Sociedad Win</td><td>loss</td><td>$-10</td><td>$+46</td></tr><tr><td>2026-05-10 21:00</td><td>Low Risk</td><td>STRONG</td><td>Crystal Palace vs Everton</td><td>Everton Win</td><td>loss</td><td>$-10</td><td>$+36</td></tr><tr><td>2026-05-11 02:45</td><td>Low Risk</td><td>STRONG</td><td>AC Milan vs Atalanta</td><td>AC Milan Win</td><td>loss</td><td>$-10</td><td>$+26</td></tr><tr><td>2026-05-11 03:00</td><td>Low Risk</td><td>KEEP</td><td>Monaco vs Lille</td><td>Under 3.0</td><td>win</td><td>$+8</td><td>$+34</td></tr><tr><td>2026-05-15 02:00</td><td>Low Risk</td><td>KEEP</td><td>Girona vs Sociedad</td><td>Under 2.5</td><td>win</td><td>$+13</td><td>$+47</td></tr><tr><td>2026-05-16 21:30</td><td>Low Risk</td><td>KEEP</td><td>Union Berlin vs Augsburg</td><td>Under 3.5</td><td>loss</td><td>$-10</td><td>$+37</td></tr><tr><td>2026-05-17 19:30</td><td>Low Risk</td><td>KEEP</td><td>Aston Villa vs Liverpool</td><td>Under 2.5</td><td>loss</td><td>$-10</td><td>$+27</td></tr><tr><td>2026-05-17 21:00</td><td>Low Risk</td><td>KEEP</td><td>Juventus vs Fiorentina</td><td>BTTS No</td><td>win</td><td>$+9</td><td>$+36</td></tr><tr><td>2026-05-17 21:00</td><td>Low Risk</td><td>CAUTION</td><td>Udinese vs Cremonese</td><td>BTTS No</td><td>win</td><td>$+11</td><td>$+47</td></tr><tr><td>2026-05-17 22:00</td><td>Low Risk</td><td>KEEP</td><td>Brentford vs Crystal Palace</td><td>BTTS Yes</td><td>win</td><td>$+8</td><td>$+55</td></tr><tr><td>2026-05-18 00:30</td><td>Low Risk</td><td>KEEP</td><td>Newcastle vs West Ham</td><td>Under 3.5</td><td>loss</td><td>$-10</td><td>$+45</td></tr><tr><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Ath Bilbao vs Celta</td><td>BTTS Yes</td><td>win</td><td>$+9</td><td>$+54</td></tr><tr><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Elche vs Getafe</td><td>Under 1.5</td><td>win</td><td>$+17</td><td>$+71</td></tr><tr><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Levante vs Mallorca</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$+61</td></tr><tr><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Sociedad vs Valencia</td><td>BTTS Yes</td><td>win</td><td>$+7</td><td>$+68</td></tr><tr><td>2026-05-18 03:00</td><td>Low Risk</td><td>KEEP</td><td>Brest vs Angers</td><td>Under 2.5</td><td>win</td><td>$+11</td><td>$+79</td></tr><tr><td>2026-05-18 03:00</td><td>Low Risk</td><td>KEEP</td><td>Strasbourg vs Monaco</td><td>Under 3.5</td><td>loss</td><td>$-10</td><td>$+69</td></tr><tr><td>2026-05-19 03:00</td><td>Low Risk</td><td>KEEP</td><td>Arsenal vs Burnley</td><td>Burnley AH +2.5</td><td>win</td><td>$+10</td><td>$+79</td></tr><tr><td>2026-05-20 02:30</td><td>Low Risk</td><td>KEEP</td><td>Bournemouth vs Man City</td><td>Over 2.5</td><td>loss</td><td>$-10</td><td>$+69</td></tr><tr><td>2026-05-20 03:15</td><td>Low Risk</td><td>KEEP</td><td>Chelsea vs Tottenham</td><td>Chelsea Win</td><td>win</td><td>$+11</td><td>$+80</td></tr></tbody></table></div>
+  <div class="history"><h2>Low Risk History</h2><table><thead><tr><th>Played</th><th>Risk Band</th><th>Quality</th><th>Match</th><th>Pick</th><th>Result</th><th>P&L</th><th>Cumulative</th></tr></thead><tbody id="low-risk-history-body"><tr class="low-risk-history-row"><td>2026-09-13 00:30</td><td>Low Risk</td><td>STRONG</td><td>Ath Bilbao vs Elche</td><td>Elche AH +1.5</td><td>win</td><td>$+8</td><td>$+169</td></tr><tr class="low-risk-history-row"><td>2026-09-12 22:00</td><td>Low Risk</td><td>KEEP</td><td>Liverpool vs Fulham</td><td>Fulham AH +1.5</td><td>win</td><td>$+8</td><td>$+161</td></tr><tr class="low-risk-history-row"><td>2026-09-12 21:30</td><td>Low Risk</td><td>KEEP</td><td>Freiburg vs M&#x27;gladbach</td><td>Freiburg Win</td><td>win</td><td>$+8</td><td>$+153</td></tr><tr class="low-risk-history-row"><td>2026-09-07 03:00</td><td>Low Risk</td><td>KEEP</td><td>Espanol vs Sevilla</td><td>BTTS Yes</td><td>win</td><td>$+11</td><td>$+145</td></tr><tr class="low-risk-history-row"><td>2026-09-07 02:45</td><td>Low Risk</td><td>KEEP</td><td>Juventus vs AC Milan</td><td>Juventus Win</td><td>loss</td><td>$-10</td><td>$+134</td></tr><tr class="low-risk-history-row"><td>2026-09-07 00:00</td><td>Low Risk</td><td>KEEP</td><td>Bologna vs Sassuolo</td><td>Over 2.5</td><td>win</td><td>$+12</td><td>$+144</td></tr><tr class="low-risk-history-row"><td>2026-09-06 23:30</td><td>Low Risk</td><td>KEEP</td><td>Ein Frankfurt vs Augsburg</td><td>Ein Frankfurt Win</td><td>loss</td><td>$-10</td><td>$+133</td></tr><tr class="low-risk-history-row"><td>2026-09-06 23:30</td><td>Low Risk</td><td>KEEP</td><td>Arsenal vs Chelsea</td><td>Arsenal O1.5</td><td>win</td><td>$+8</td><td>$+143</td></tr><tr class="low-risk-history-row"><td>2026-09-06 22:15</td><td>Low Risk</td><td>KEEP</td><td>Valencia vs Barcelona</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$+135</td></tr><tr class="low-risk-history-row"><td>2026-09-06 02:45</td><td>Low Risk</td><td>STRONG</td><td>Le Havre vs Brest</td><td>Over 2.5</td><td>win</td><td>$+12</td><td>$+145</td></tr><tr class="low-risk-history-row"><td>2026-09-06 02:45</td><td>Low Risk</td><td>KEEP</td><td>Roma vs Atalanta</td><td>Under 2.5</td><td>loss</td><td>$-10</td><td>$+132</td></tr><tr class="low-risk-history-row"><td>2026-09-06 00:00</td><td>Low Risk</td><td>KEEP</td><td>Inter Milan vs Napoli</td><td>Over 2.5</td><td>win</td><td>$+11</td><td>$+142</td></tr><tr class="low-risk-history-row"><td>2026-09-05 22:00</td><td>Low Risk</td><td>KEEP</td><td>Nott&#x27;m Forest vs Tottenham</td><td>Over 2.5</td><td>loss</td><td>$-10</td><td>$+131</td></tr><tr class="low-risk-history-row"><td>2026-09-05 22:00</td><td>Low Risk</td><td>KEEP</td><td>Brighton vs Leeds</td><td>Under 2.5</td><td>win</td><td>$+11</td><td>$+141</td></tr><tr class="low-risk-history-row"><td>2026-09-05 03:05</td><td>Low Risk</td><td>KEEP</td><td>PSG vs Monaco</td><td>Monaco AH +1.5</td><td>win</td><td>$+9</td><td>$+131</td></tr><tr class="low-risk-history-row"><td>2026-09-05 03:00</td><td>Low Risk</td><td>KEEP</td><td>Betis vs Real Madrid</td><td>Real Madrid U2.5</td><td>win</td><td>$+8</td><td>$+122</td></tr><tr class="low-risk-history-row"><td>2026-09-04 03:00</td><td>Low Risk</td><td>KEEP</td><td>Sociedad vs Celta</td><td>Under 2.5</td><td>win</td><td>$+10</td><td>$+114</td></tr><tr class="low-risk-history-row"><td>2026-09-01 03:00</td><td>Low Risk</td><td>KEEP</td><td>Aston Villa vs Arsenal</td><td>Under 2.5</td><td>win</td><td>$+11</td><td>$+104</td></tr><tr class="low-risk-history-row"><td>2026-09-01 01:30</td><td>Low Risk</td><td>KEEP</td><td>Osasuna vs Getafe</td><td>Getafe U0.5</td><td>win</td><td>$+12</td><td>$+92</td></tr><tr class="low-risk-history-row"><td>2026-09-01 00:30</td><td>Low Risk</td><td>KEEP</td><td>Lecce vs Roma</td><td>Roma U1.5</td><td>loss</td><td>$-10</td><td>$+81</td></tr><tr class="low-risk-history-row"><td>2026-08-31 03:30</td><td>Low Risk</td><td>KEEP</td><td>Celta vs Ath Bilbao</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$+91</td></tr><tr class="low-risk-history-row"><td>2026-08-31 02:45</td><td>Low Risk</td><td>KEEP</td><td>Monaco vs Marseille</td><td>Monaco U1.5</td><td>loss</td><td>$-10</td><td>$+101</td></tr><tr class="low-risk-history-row"><td>2026-08-31 02:45</td><td>Low Risk</td><td>KEEP</td><td>Lazio vs Genoa</td><td>Lazio Win</td><td>win</td><td>$+14</td><td>$+111</td></tr><tr class="low-risk-history-row"><td>2026-08-31 00:30</td><td>Low Risk</td><td>KEEP</td><td>Napoli vs Como</td><td>Over 2.5</td><td>win</td><td>$+14</td><td>$+97</td></tr><tr class="low-risk-history-row"><td>2026-08-30 23:30</td><td>Low Risk</td><td>KEEP</td><td>Man United vs Ipswich</td><td>BTTS Yes</td><td>win</td><td>$+8</td><td>$+83</td></tr><tr class="low-risk-history-row"><td>2026-08-30 21:30</td><td>Low Risk</td><td>KEEP</td><td>Freiburg vs Werder Bremen</td><td>Over 2.5</td><td>win</td><td>$+8</td><td>$+75</td></tr><tr class="low-risk-history-row"><td>2026-08-30 21:00</td><td>Low Risk</td><td>KEEP</td><td>Chelsea vs Brighton</td><td>Chelsea U1.5</td><td>loss</td><td>$-10</td><td>$+67</td></tr><tr class="low-risk-history-row"><td>2026-08-30 21:00</td><td>Low Risk</td><td>KEEP</td><td>Sunderland vs Fulham</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$+77</td></tr><tr class="low-risk-history-row"><td>2026-05-25 02:45</td><td>Low Risk</td><td>KEEP</td><td>Torino vs Juventus</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$+87</td></tr><tr class="low-risk-history-row"><td>2026-05-25 02:45</td><td>Low Risk</td><td>KEEP</td><td>Lecce vs Genoa</td><td>BTTS No</td><td>win</td><td>$+8</td><td>$+97</td></tr><tr class="low-risk-history-row"><td>2026-05-25 02:45</td><td>Low Risk</td><td>KEEP</td><td>Cremonese vs Como</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$+89</td></tr><tr class="low-risk-history-row"><td>2026-05-25 00:00</td><td>Low Risk</td><td>KEEP</td><td>Napoli vs Udinese</td><td>BTTS No</td><td>win</td><td>$+9</td><td>$+99</td></tr><tr class="low-risk-history-row"><td>2026-05-24 23:00</td><td>Low Risk</td><td>KEEP</td><td>Tottenham vs Everton</td><td>Under 2.5</td><td>win</td><td>$+12</td><td>$+90</td></tr><tr class="low-risk-history-row"><td>2026-05-24 23:00</td><td>Low Risk</td><td>CAUTION</td><td>Man City vs Aston Villa</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$+79</td></tr><tr class="low-risk-history-row"><td>2026-05-24 23:00</td><td>Low Risk</td><td>CAUTION</td><td>Crystal Palace vs Arsenal</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$+89</td></tr><tr class="low-risk-history-row"><td>2026-05-24 21:00</td><td>Low Risk</td><td>KEEP</td><td>Parma vs Sassuolo</td><td>BTTS No</td><td>win</td><td>$+13</td><td>$+99</td></tr><tr class="low-risk-history-row"><td>2026-05-24 03:00</td><td>Low Risk</td><td>CAUTION</td><td>Betis vs Levante</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$+86</td></tr><tr class="low-risk-history-row"><td>2026-05-24 03:00</td><td>Low Risk</td><td>KEEP</td><td>Mallorca vs Real Oviedo</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$+96</td></tr><tr class="low-risk-history-row"><td>2026-05-24 03:00</td><td>Low Risk</td><td>KEEP</td><td>Getafe vs Osasuna</td><td>Under 1.5</td><td>win</td><td>$+14</td><td>$+106</td></tr><tr class="low-risk-history-row"><td>2026-05-24 03:00</td><td>Low Risk</td><td>KEEP</td><td>Espanol vs Sociedad</td><td>Under 2.5</td><td>win</td><td>$+12</td><td>$+92</td></tr><tr class="low-risk-history-row"><td>2026-05-20 03:15</td><td>Low Risk</td><td>KEEP</td><td>Chelsea vs Tottenham</td><td>Chelsea Win</td><td>win</td><td>$+11</td><td>$+80</td></tr><tr class="low-risk-history-row"><td>2026-05-20 02:30</td><td>Low Risk</td><td>KEEP</td><td>Bournemouth vs Man City</td><td>Over 2.5</td><td>loss</td><td>$-10</td><td>$+69</td></tr><tr class="low-risk-history-row"><td>2026-05-19 03:00</td><td>Low Risk</td><td>KEEP</td><td>Arsenal vs Burnley</td><td>Burnley AH +2.5</td><td>win</td><td>$+10</td><td>$+79</td></tr><tr class="low-risk-history-row"><td>2026-05-18 03:00</td><td>Low Risk</td><td>KEEP</td><td>Strasbourg vs Monaco</td><td>Under 3.5</td><td>loss</td><td>$-10</td><td>$+69</td></tr><tr class="low-risk-history-row"><td>2026-05-18 03:00</td><td>Low Risk</td><td>KEEP</td><td>Brest vs Angers</td><td>Under 2.5</td><td>win</td><td>$+11</td><td>$+79</td></tr><tr class="low-risk-history-row"><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Sociedad vs Valencia</td><td>BTTS Yes</td><td>win</td><td>$+7</td><td>$+68</td></tr><tr class="low-risk-history-row"><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Levante vs Mallorca</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$+61</td></tr><tr class="low-risk-history-row"><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Elche vs Getafe</td><td>Under 1.5</td><td>win</td><td>$+17</td><td>$+71</td></tr><tr class="low-risk-history-row"><td>2026-05-18 01:00</td><td>Low Risk</td><td>KEEP</td><td>Ath Bilbao vs Celta</td><td>BTTS Yes</td><td>win</td><td>$+9</td><td>$+54</td></tr><tr class="low-risk-history-row"><td>2026-05-18 00:30</td><td>Low Risk</td><td>KEEP</td><td>Newcastle vs West Ham</td><td>Under 3.5</td><td>loss</td><td>$-10</td><td>$+45</td></tr><tr class="low-risk-history-row"><td>2026-05-17 22:00</td><td>Low Risk</td><td>KEEP</td><td>Brentford vs Crystal Palace</td><td>BTTS Yes</td><td>win</td><td>$+8</td><td>$+55</td></tr><tr class="low-risk-history-row"><td>2026-05-17 21:00</td><td>Low Risk</td><td>CAUTION</td><td>Udinese vs Cremonese</td><td>BTTS No</td><td>win</td><td>$+11</td><td>$+47</td></tr><tr class="low-risk-history-row"><td>2026-05-17 21:00</td><td>Low Risk</td><td>KEEP</td><td>Juventus vs Fiorentina</td><td>BTTS No</td><td>win</td><td>$+9</td><td>$+36</td></tr><tr class="low-risk-history-row"><td>2026-05-17 19:30</td><td>Low Risk</td><td>KEEP</td><td>Aston Villa vs Liverpool</td><td>Under 2.5</td><td>loss</td><td>$-10</td><td>$+27</td></tr><tr class="low-risk-history-row"><td>2026-05-16 21:30</td><td>Low Risk</td><td>KEEP</td><td>Union Berlin vs Augsburg</td><td>Under 3.5</td><td>loss</td><td>$-10</td><td>$+37</td></tr><tr class="low-risk-history-row"><td>2026-05-15 02:00</td><td>Low Risk</td><td>KEEP</td><td>Girona vs Sociedad</td><td>Under 2.5</td><td>win</td><td>$+13</td><td>$+47</td></tr><tr class="low-risk-history-row"><td>2026-05-11 03:00</td><td>Low Risk</td><td>KEEP</td><td>Monaco vs Lille</td><td>Under 3.0</td><td>win</td><td>$+8</td><td>$+34</td></tr><tr class="low-risk-history-row"><td>2026-05-11 02:45</td><td>Low Risk</td><td>STRONG</td><td>AC Milan vs Atalanta</td><td>AC Milan Win</td><td>loss</td><td>$-10</td><td>$+26</td></tr><tr class="low-risk-history-row"><td>2026-05-10 21:00</td><td>Low Risk</td><td>STRONG</td><td>Crystal Palace vs Everton</td><td>Everton Win</td><td>loss</td><td>$-10</td><td>$+36</td></tr><tr class="low-risk-history-row"><td>2026-05-10 03:00</td><td>Low Risk</td><td>STRONG</td><td>Sociedad vs Betis</td><td>Sociedad Win</td><td>loss</td><td>$-10</td><td>$+46</td></tr><tr class="low-risk-history-row"><td>2026-05-10 02:45</td><td>Low Risk</td><td>KEEP</td><td>Lecce vs Juventus</td><td>BTTS No</td><td>win</td><td>$+8</td><td>$+56</td></tr><tr class="low-risk-history-row"><td>2026-05-10 00:00</td><td>Low Risk</td><td>STRONG</td><td>Lazio vs Inter Milan</td><td>Inter Milan Win</td><td>win</td><td>$+8</td><td>$+48</td></tr><tr class="low-risk-history-row"><td>2026-05-09 22:00</td><td>Low Risk</td><td>KEEP</td><td>Fulham vs Bournemouth</td><td>Fulham U1.5</td><td>win</td><td>$+8</td><td>$+40</td></tr><tr class="low-risk-history-row"><td>2026-05-09 22:00</td><td>Low Risk</td><td>KEEP</td><td>Brighton vs Wolves</td><td>Wolves U0.5</td><td>win</td><td>$+10</td><td>$+32</td></tr><tr class="low-risk-history-row"><td>2026-05-09 21:30</td><td>Low Risk</td><td>STRONG</td><td>RB Leipzig vs St Pauli</td><td>Under 3.0</td><td>push</td><td>$+0</td><td>$+22</td></tr><tr class="low-risk-history-row"><td>2026-05-09 02:30</td><td>Low Risk</td><td>STRONG</td><td>Dortmund vs Ein Frankfurt</td><td>Dortmund Win</td><td>win</td><td>$+7</td><td>$+22</td></tr><tr class="low-risk-history-row"><td>2026-05-05 00:30</td><td>Low Risk</td><td>KEEP</td><td>Cremonese vs Lazio</td><td>Lazio Win</td><td>win</td><td>$+15</td><td>$+15</td></tr></tbody></table><div class="pagination low-risk-history-pagination"><span id="low-risk-history-page-status" aria-live="polite"></span><div id="low-risk-history-page-buttons" class="pagination-buttons"></div></div></div>
 </section>
 
 <section class="range " id="range-C">
@@ -503,7 +482,7 @@ button.loss { color:var(--bad); border-color:#ef444433; }
 </div>
 
   <div class="empty">No picks generated for this risk band yet.</div>
-  <div class="history"><h2>High Risk History</h2><table><thead><tr><th>Played</th><th>Risk Band</th><th>Quality</th><th>Match</th><th>Pick</th><th>Result</th><th>P&L</th><th>Cumulative</th></tr></thead><tbody><tr><td>2026-05-04 22:00</td><td>High Risk</td><td>STRONG</td><td>Chelsea vs Nott&#x27;m Forest</td><td>Draw</td><td>loss</td><td>$-10</td><td>$-10</td></tr><tr><td>2026-05-04 22:00</td><td>High Risk</td><td>STRONG</td><td>Chelsea vs Nott&#x27;m Forest</td><td>Under 1.5</td><td>loss</td><td>$-10</td><td>$-20</td></tr><tr><td>2026-05-05 03:00</td><td>High Risk</td><td>STRONG</td><td>Everton vs Man City</td><td>Draw</td><td>win</td><td>$+37</td><td>$+17</td></tr><tr><td>2026-05-05 03:00</td><td>High Risk</td><td>STRONG</td><td>Sevilla vs Sociedad</td><td>Sociedad Win</td><td>loss</td><td>$-10</td><td>$+7</td></tr><tr><td>2026-05-09 02:45</td><td>High Risk</td><td>STRONG</td><td>Torino vs Sassuolo</td><td>Sassuolo Win</td><td>loss</td><td>$-10</td><td>$-3</td></tr><tr><td>2026-05-09 03:00</td><td>High Risk</td><td>STRONG</td><td>Levante vs Osasuna</td><td>Under 1.5</td><td>loss</td><td>$-10</td><td>$-13</td></tr><tr><td>2026-05-10 00:30</td><td>High Risk</td><td>STRONG</td><td>Atletico Madrid vs Celta</td><td>Celta Win</td><td>win</td><td>$+24</td><td>$+11</td></tr><tr><td>2026-05-10 18:30</td><td>High Risk</td><td>KEEP</td><td>Verona vs Como</td><td>Over 3.0</td><td>loss</td><td>$-10</td><td>$+1</td></tr><tr><td>2026-05-10 21:00</td><td>High Risk</td><td>STRONG</td><td>Fiorentina vs Genoa</td><td>Genoa Win</td><td>loss</td><td>$-10</td><td>$-9</td></tr><tr><td>2026-05-10 21:00</td><td>High Risk</td><td>STRONG</td><td>Nott&#x27;m Forest vs Newcastle</td><td>Nott&#x27;m Forest Win</td><td>loss</td><td>$-10</td><td>$-19</td></tr><tr><td>2026-05-11 00:00</td><td>High Risk</td><td>KEEP</td><td>Parma vs Roma</td><td>Under 1.5</td><td>loss</td><td>$-10</td><td>$-29</td></tr><tr><td>2026-05-11 03:00</td><td>High Risk</td><td>STRONG</td><td>Toulouse vs Lyon</td><td>Toulouse Win</td><td>win</td><td>$+34</td><td>$+5</td></tr><tr><td>2026-05-12 03:00</td><td>High Risk</td><td>STRONG</td><td>Tottenham vs Leeds</td><td>Leeds Win</td><td>loss</td><td>$-10</td><td>$-5</td></tr><tr><td>2026-05-14 01:00</td><td>High Risk</td><td>STRONG</td><td>Villarreal vs Sevilla</td><td>Villarreal AH -1.5</td><td>loss</td><td>$-10</td><td>$-15</td></tr><tr><td>2026-05-14 03:30</td><td>High Risk</td><td>STRONG</td><td>Alaves vs Barcelona</td><td>Barcelona AH -1.5</td><td>loss</td><td>$-10</td><td>$-25</td></tr><tr><td>2026-05-16 21:30</td><td>High Risk</td><td>KEEP</td><td>Union Berlin vs Augsburg</td><td>BTTS No</td><td>win</td><td>$+19</td><td>$-6</td></tr><tr><td>2026-05-17 19:30</td><td>High Risk</td><td>CAUTION</td><td>Aston Villa vs Liverpool</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-16</td></tr><tr><td>2026-05-17 21:00</td><td>High Risk</td><td>STRONG</td><td>Sassuolo vs Lecce</td><td>Sassuolo Win</td><td>loss</td><td>$-10</td><td>$-26</td></tr><tr><td>2026-05-17 21:00</td><td>High Risk</td><td>STRONG</td><td>Udinese vs Cremonese</td><td>Udinese Win</td><td>loss</td><td>$-10</td><td>$-36</td></tr><tr><td>2026-05-18 01:00</td><td>High Risk</td><td>KEEP</td><td>Barcelona vs Betis</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-46</td></tr><tr><td>2026-05-18 01:00</td><td>High Risk</td><td>STRONG</td><td>Vallecano vs Villarreal</td><td>Villarreal Win</td><td>loss</td><td>$-10</td><td>$-56</td></tr><tr><td>2026-05-18 03:00</td><td>High Risk</td><td>STRONG</td><td>Lorient vs Le Havre</td><td>Lorient Win</td><td>loss</td><td>$-10</td><td>$-66</td></tr><tr><td>2026-05-18 03:00</td><td>High Risk</td><td>STRONG</td><td>Paris FC vs PSG</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-76</td></tr><tr><td>2026-05-18 03:00</td><td>High Risk</td><td>KEEP</td><td>Strasbourg vs Monaco</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-86</td></tr><tr><td>2026-05-19 03:00</td><td>High Risk</td><td>CAUTION</td><td>Arsenal vs Burnley</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$-96</td></tr></tbody></table></div>
+  <div class="history"><h2>High Risk History</h2><table><thead><tr><th>Played</th><th>Risk Band</th><th>Quality</th><th>Match</th><th>Pick</th><th>Result</th><th>P&L</th><th>Cumulative</th></tr></thead><tbody><tr class=""><td>2026-05-19 03:00</td><td>High Risk</td><td>CAUTION</td><td>Arsenal vs Burnley</td><td>BTTS Yes</td><td>loss</td><td>$-10</td><td>$-96</td></tr><tr class=""><td>2026-05-18 03:00</td><td>High Risk</td><td>KEEP</td><td>Strasbourg vs Monaco</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-86</td></tr><tr class=""><td>2026-05-18 03:00</td><td>High Risk</td><td>STRONG</td><td>Paris FC vs PSG</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-76</td></tr><tr class=""><td>2026-05-18 03:00</td><td>High Risk</td><td>STRONG</td><td>Lorient vs Le Havre</td><td>Lorient Win</td><td>loss</td><td>$-10</td><td>$-66</td></tr><tr class=""><td>2026-05-18 01:00</td><td>High Risk</td><td>STRONG</td><td>Vallecano vs Villarreal</td><td>Villarreal Win</td><td>loss</td><td>$-10</td><td>$-56</td></tr><tr class=""><td>2026-05-18 01:00</td><td>High Risk</td><td>KEEP</td><td>Barcelona vs Betis</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-46</td></tr><tr class=""><td>2026-05-17 21:00</td><td>High Risk</td><td>STRONG</td><td>Udinese vs Cremonese</td><td>Udinese Win</td><td>loss</td><td>$-10</td><td>$-36</td></tr><tr class=""><td>2026-05-17 21:00</td><td>High Risk</td><td>STRONG</td><td>Sassuolo vs Lecce</td><td>Sassuolo Win</td><td>loss</td><td>$-10</td><td>$-26</td></tr><tr class=""><td>2026-05-17 19:30</td><td>High Risk</td><td>CAUTION</td><td>Aston Villa vs Liverpool</td><td>BTTS No</td><td>loss</td><td>$-10</td><td>$-16</td></tr><tr class=""><td>2026-05-16 21:30</td><td>High Risk</td><td>KEEP</td><td>Union Berlin vs Augsburg</td><td>BTTS No</td><td>win</td><td>$+19</td><td>$-6</td></tr><tr class=""><td>2026-05-14 03:30</td><td>High Risk</td><td>STRONG</td><td>Alaves vs Barcelona</td><td>Barcelona AH -1.5</td><td>loss</td><td>$-10</td><td>$-25</td></tr><tr class=""><td>2026-05-14 01:00</td><td>High Risk</td><td>STRONG</td><td>Villarreal vs Sevilla</td><td>Villarreal AH -1.5</td><td>loss</td><td>$-10</td><td>$-15</td></tr><tr class=""><td>2026-05-12 03:00</td><td>High Risk</td><td>STRONG</td><td>Tottenham vs Leeds</td><td>Leeds Win</td><td>loss</td><td>$-10</td><td>$-5</td></tr><tr class=""><td>2026-05-11 03:00</td><td>High Risk</td><td>STRONG</td><td>Toulouse vs Lyon</td><td>Toulouse Win</td><td>win</td><td>$+34</td><td>$+5</td></tr><tr class=""><td>2026-05-11 00:00</td><td>High Risk</td><td>KEEP</td><td>Parma vs Roma</td><td>Under 1.5</td><td>loss</td><td>$-10</td><td>$-29</td></tr><tr class=""><td>2026-05-10 21:00</td><td>High Risk</td><td>STRONG</td><td>Nott&#x27;m Forest vs Newcastle</td><td>Nott&#x27;m Forest Win</td><td>loss</td><td>$-10</td><td>$-19</td></tr><tr class=""><td>2026-05-10 21:00</td><td>High Risk</td><td>STRONG</td><td>Fiorentina vs Genoa</td><td>Genoa Win</td><td>loss</td><td>$-10</td><td>$-9</td></tr><tr class=""><td>2026-05-10 18:30</td><td>High Risk</td><td>KEEP</td><td>Verona vs Como</td><td>Over 3.0</td><td>loss</td><td>$-10</td><td>$+1</td></tr><tr class=""><td>2026-05-10 00:30</td><td>High Risk</td><td>STRONG</td><td>Atletico Madrid vs Celta</td><td>Celta Win</td><td>win</td><td>$+24</td><td>$+11</td></tr><tr class=""><td>2026-05-09 03:00</td><td>High Risk</td><td>STRONG</td><td>Levante vs Osasuna</td><td>Under 1.5</td><td>loss</td><td>$-10</td><td>$-13</td></tr><tr class=""><td>2026-05-09 02:45</td><td>High Risk</td><td>STRONG</td><td>Torino vs Sassuolo</td><td>Sassuolo Win</td><td>loss</td><td>$-10</td><td>$-3</td></tr><tr class=""><td>2026-05-05 03:00</td><td>High Risk</td><td>STRONG</td><td>Sevilla vs Sociedad</td><td>Sociedad Win</td><td>loss</td><td>$-10</td><td>$+7</td></tr><tr class=""><td>2026-05-05 03:00</td><td>High Risk</td><td>STRONG</td><td>Everton vs Man City</td><td>Draw</td><td>win</td><td>$+37</td><td>$+17</td></tr><tr class=""><td>2026-05-04 22:00</td><td>High Risk</td><td>STRONG</td><td>Chelsea vs Nott&#x27;m Forest</td><td>Under 1.5</td><td>loss</td><td>$-10</td><td>$-20</td></tr><tr class=""><td>2026-05-04 22:00</td><td>High Risk</td><td>STRONG</td><td>Chelsea vs Nott&#x27;m Forest</td><td>Draw</td><td>loss</td><td>$-10</td><td>$-10</td></tr></tbody></table></div>
 </section>
 
 <section class="range" id="range-PARLEY">
@@ -513,8 +492,8 @@ button.loss { color:var(--bad); border-color:#ef444433; }
       <p>Recommended: 2 legs first. The 3-leg slip may include one controlled odds booster.</p>
     </div>
     <div class="performance-grid">
-      <div class="performance-card performance-leader"><span>Parley</span><strong class="good">+0.0%</strong><small>0 settled - 0W-0L</small><div>Staked $0 / P&amp;L $+0.00</div></div>
-      <div class="performance-card"><span>Source</span><strong>4</strong><small>Parley candidates</small><div>Selected from full model odds pool.</div></div>
+      <div class="performance-card performance-leader"><span>Parley</span><strong class="good">+28.9%</strong><small>13 settled - 8W-5L</small><div>Staked $65 / P&amp;L $+18.78</div></div>
+      <div class="performance-card"><span>Source</span><strong>11</strong><small>Parley candidates</small><div>Selected from full model odds pool.</div></div>
       <div class="performance-card"><span>Stake</span><strong>$5</strong><small>Suggested per slip</small><div>Half of flat stake.</div></div>
       <div class="performance-card"><span>Rule</span><strong>1</strong><small>Booster max</small><div>Low odds first, no same-match correlation.</div></div>
     </div>
@@ -522,77 +501,56 @@ button.loss { color:var(--bad); border-color:#ef444433; }
   <div class="pnl-bar">
     <div><span>Base Bank</span><strong>$100</strong></div>
     <div><span>Slip Stake</span><strong>$5</strong></div>
-    <div><span>Record</span><strong>0W-0L</strong></div>
-    <div><span>P&amp;L</span><strong class="good">$+0.00</strong></div>
-    <div><span>Bank</span><strong class="good">$100.00</strong></div>
+    <div><span>Record</span><strong>8W-5L</strong></div>
+    <div><span>P&amp;L</span><strong class="good">$+18.78</strong></div>
+    <div><span>Bank</span><strong class="good">$118.78</strong></div>
   </div>
-  <div class="range-note">2 pending parley slips &middot; every leg must win &middot; Parley is now saved and settled separately from High Risk and Low Risk.</div>
-  <div class="day-header"><span>Recommended Parley Slips</span><small>2 slips</small></div>
+  <div class="range-note">1 pending parley slips &middot; every leg must win &middot; Parley is now saved and settled separately from High Risk and Low Risk.</div>
+  <div class="day-header"><span>Current Pending Parley</span><small>1 slip</small></div>
 
-<div class="pick-card keep parley-pick" id="pick-parley-1">
-  <div class="pick-summary" onclick="toggleDetails('parley-1')">
+<div class="pick-card keep parley-pick" id="pick-parley-14">
+  <div class="pick-summary" onclick="toggleDetails('parley-14')">
     <div class="rank">#1</div>
-    <div class="pick-main">
-      <div class="pick-title"><span class="market-pill">PARLEY</span>Conservative 2-leg <span class="badge keep">KEEP</span></div>
-      <div class="pick-meta">2 legs &middot; low odds model pool &middot; no same-match legs</div>
-    </div>
-    <div class="numbers">
-      <div><strong>@3.38</strong><span>Total Odds</span></div>
-      <div><strong class="good">57.5%</strong><span>Model Hit</span></div>
-      <div><strong>$5</strong><span>Stake</span></div>
-      <div><strong class="good">+$12</strong><span>Profit</span></div>
-    </div>
-    <div class="result">pending</div>
-  </div>
-  <div class="pick-details" id="details-parley-1">
-    <div class="reasoning">This parley is built from the model's separate parley pool, not copied from Low Risk. It prefers lower odds, higher model probability, and segments that have learned better from settled results. It allows only limited booster odds because every leg must win.</div>
-    <div class="metrics">
-      <span>Combined Odds <strong>@3.38</strong></span>
-      <span>Combined Model <strong>57.5%</strong></span>
-      <span>Win <strong class="good">+$12</strong></span>
-      <span>Lose <strong class="bad">-$5</strong></span>
-    </div>
-    <div class="parley-legs"><div class="parley-leg"><div><span class="market-pill">BTTS</span><strong>BTTS Yes</strong></div><small>Lazio vs Pisa &middot; 2026-05-24 02:45</small><div class="metrics"><span>Odds <strong>@1.98</strong></span><span>Model <strong>73.4%</strong></span><span>Edge <strong class="good">+45.4%</strong></span><span>Band <strong>LOW RISK</strong></span><span>Result <strong>pending</strong></span></div></div><div class="parley-leg"><div><span class="market-pill">AH</span><strong>Real Oviedo AH +1.5</strong></div><small>Mallorca vs Real Oviedo &middot; 2026-05-24 03:00</small><div class="metrics"><span>Odds <strong>@1.71</strong></span><span>Model <strong>78.4%</strong></span><span>Edge <strong class="good">+34.0%</strong></span><span>Band <strong>LOW RISK</strong></span><span>Result <strong>pending</strong></span></div></div></div>
-  </div>
-</div>
-
-<div class="pick-card keep parley-pick" id="pick-parley-2">
-  <div class="pick-summary" onclick="toggleDetails('parley-2')">
-    <div class="rank">#2</div>
     <div class="pick-main">
       <div class="pick-title"><span class="market-pill">PARLEY</span>Balanced 3-leg <span class="badge keep">KEEP</span></div>
       <div class="pick-meta">3 legs &middot; low odds model pool &middot; no same-match legs</div>
     </div>
     <div class="numbers">
-      <div><strong>@7.36</strong><span>Total Odds</span></div>
-      <div><strong class="good">40.7%</strong><span>Model Hit</span></div>
+      <div><strong>@2.82</strong><span>Total Odds</span></div>
+      <div><strong class="good">49.3%</strong><span>Model Hit</span></div>
       <div><strong>$5</strong><span>Stake</span></div>
-      <div><strong class="good">+$32</strong><span>Profit</span></div>
+      <div><strong class="good">+$9</strong><span>Profit</span></div>
     </div>
     <div class="result">pending</div>
   </div>
-  <div class="pick-details" id="details-parley-2">
+  <div class="pick-details" id="details-parley-14">
     <div class="reasoning">This parley is built from the model's separate parley pool, not copied from Low Risk. It prefers lower odds, higher model probability, and segments that have learned better from settled results. It allows only limited booster odds because every leg must win.</div>
     <div class="metrics">
-      <span>Combined Odds <strong>@7.36</strong></span>
-      <span>Combined Model <strong>40.7%</strong></span>
-      <span>Win <strong class="good">+$32</strong></span>
+      <span>Combined Odds <strong>@2.82</strong></span>
+      <span>Combined Model <strong>49.3%</strong></span>
+      <span>Win <strong class="good">+$9</strong></span>
       <span>Lose <strong class="bad">-$5</strong></span>
     </div>
-    <div class="parley-legs"><div class="parley-leg"><div><span class="market-pill">BTTS</span><strong>BTTS Yes</strong></div><small>Lazio vs Pisa &middot; 2026-05-24 02:45</small><div class="metrics"><span>Odds <strong>@1.98</strong></span><span>Model <strong>73.4%</strong></span><span>Edge <strong class="good">+45.4%</strong></span><span>Band <strong>LOW RISK</strong></span><span>Result <strong>pending</strong></span></div></div><div class="parley-leg"><div><span class="market-pill">BTTS</span><strong>BTTS No</strong></div><small>Alaves vs Vallecano &middot; 2026-05-24 03:00</small><div class="metrics"><span>Odds <strong>@2.17</strong></span><span>Model <strong>70.8%</strong></span><span>Edge <strong class="good">+53.9%</strong></span><span>Band <strong>BOOSTER</strong></span><span>Result <strong>pending</strong></span></div></div><div class="parley-leg"><div><span class="market-pill">AH</span><strong>Real Oviedo AH +1.5</strong></div><small>Mallorca vs Real Oviedo &middot; 2026-05-24 03:00</small><div class="metrics"><span>Odds <strong>@1.71</strong></span><span>Model <strong>78.4%</strong></span><span>Edge <strong class="good">+34.0%</strong></span><span>Band <strong>LOW RISK</strong></span><span>Result <strong>pending</strong></span></div></div></div>
+    <div class="parley-legs"><div class="parley-leg"><div><span class="market-pill">AH</span><strong>Ein Frankfurt AH +1.5</strong></div><small>Mainz vs Ein Frankfurt &middot; 2026-09-12 21:30</small><div class="metrics"><span>Odds <strong>@1.38</strong></span><span>Model <strong>79.7%</strong></span><span>Edge <strong class="good">+9.9%</strong></span><span>Band <strong>LOW ODDS</strong></span><span>Result <strong>win</strong></span></div></div><div class="parley-leg"><div><span class="market-pill">AH</span><strong>Augsburg AH +1.5</strong></div><small>Augsburg vs Leverkusen &middot; 2026-09-12 21:30</small><div class="metrics"><span>Odds <strong>@1.48</strong></span><span>Model <strong>81.0%</strong></span><span>Edge <strong class="good">+20.1%</strong></span><span>Band <strong>LOW ODDS</strong></span><span>Result <strong>win</strong></span></div></div><div class="parley-leg"><div><span class="market-pill">AH</span><strong>Bologna AH +1.5</strong></div><small>Napoli vs Bologna &middot; 2026-09-14 00:00</small><div class="metrics"><span>Odds <strong>@1.38</strong></span><span>Model <strong>76.3%</strong></span><span>Edge <strong class="good">+5.2%</strong></span><span>Band <strong>LOW ODDS</strong></span><span>Result <strong>pending</strong></span></div></div></div>
   </div>
 </div>
 
-  <div class="history empty-history">No settled parley history yet.</div>
+  <section class="parley-history"><div class="parley-history-heading"><div><span>Settled slips</span><h2>Parley Result History</h2></div><p>Newest first. Each card shows whether the whole parley won or lost and what happened to every leg.</p></div><div class="parley-history-list"><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-13 02:45</span><h3>#13 Conservative 2-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@2.03</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$10.13</strong></div><div><span>Profit / loss</span><strong class="good">$+5.13</strong></div><div><span>Running P&amp;L</span><strong class="good">$+18.78</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Everton AH +1.5</strong><small>Tottenham 0-0 Everton &middot; 2026-09-13 00:30 &middot; @1.31</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Cagliari AH +1.5</strong><small>Atalanta 1-2 Cagliari &middot; 2026-09-13 02:45 &middot; @1.55</small></div></div></div></article><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-12 03:00</span><h3>#11 Conservative 2-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@1.82</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$9.12</strong></div><div><span>Profit / loss</span><strong class="good">$+4.12</strong></div><div><span>Running P&amp;L</span><strong class="good">$+13.65</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Paris FC AH +1.5</strong><small>Marseille 2-3 Paris FC &middot; 2026-09-07 02:45 &middot; @1.42</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Sevilla AH +2.5</strong><small>Sevilla 1-0 Valencia &middot; 2026-09-12 03:00 &middot; @1.29</small></div></div></div></article><article class="parley-history-card loss"><div class="parley-history-card-head"><div><span>Finished 2026-09-08 00:30</span><h3>#12 Balanced 3-leg</h3></div><strong class="parley-outcome loss">LOST</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@2.57</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$0.00</strong></div><div><span>Profit / loss</span><strong class="bad">$-5.00</strong></div><div><span>Running P&amp;L</span><strong class="good">$+9.52</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg loss"><span class="leg-outcome loss">LOST</span><div class="parley-history-leg-main"><strong>Valencia AH +2.5</strong><small>Valencia 0-5 Barcelona &middot; 2026-09-06 22:15 &middot; @1.50</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Lecce AH +1.5</strong><small>Cagliari 1-0 Lecce &middot; 2026-09-08 00:30 &middot; @1.28</small></div></div><div class="parley-history-leg pending"><span class="leg-outcome pending">NOT SETTLED</span><div class="parley-history-leg-main"><strong>Nott&#x27;m Forest AH +1.5</strong><small>Aston Villa vs Nott&#x27;m Forest &middot; 2026-09-12 22:00 &middot; @1.33</small></div></div></div></article><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-06 21:00</span><h3>#10 Balanced 3-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@2.09</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$10.47</strong></div><div><span>Profit / loss</span><strong class="good">$+5.47</strong></div><div><span>Running P&amp;L</span><strong class="good">$+14.52</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Brighton U2.5</strong><small>Brighton 1-1 Leeds &middot; 2026-09-05 22:00 &middot; @1.29</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Lorient AH +2.5</strong><small>Lens 0-1 Lorient &middot; 2026-09-05 23:15 &middot; @1.27</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Man United U2.5</strong><small>Everton 2-2 Man United &middot; 2026-09-06 21:00 &middot; @1.28</small></div></div></div></article><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-06 21:00</span><h3>#9 Conservative 2-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@1.65</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$8.27</strong></div><div><span>Profit / loss</span><strong class="good">$+3.27</strong></div><div><span>Running P&amp;L</span><strong class="good">$+9.05</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Brighton U2.5</strong><small>Brighton 1-1 Leeds &middot; 2026-09-05 22:00 &middot; @1.29</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Man United U2.5</strong><small>Everton 2-2 Man United &middot; 2026-09-06 21:00 &middot; @1.28</small></div></div></div></article><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-06 21:00</span><h3>#8 Balanced 3-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@2.12</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$10.60</strong></div><div><span>Profit / loss</span><strong class="good">$+5.60</strong></div><div><span>Running P&amp;L</span><strong class="good">$+5.78</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Sociedad U2.5</strong><small>Sociedad 0-0 Celta &middot; 2026-09-04 03:00 &middot; @1.28</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Brighton U2.5</strong><small>Brighton 1-1 Leeds &middot; 2026-09-05 22:00 &middot; @1.29</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Man United U2.5</strong><small>Everton 2-2 Man United &middot; 2026-09-06 21:00 &middot; @1.28</small></div></div></div></article><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-05 22:00</span><h3>#7 Conservative 2-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@1.65</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$8.27</strong></div><div><span>Profit / loss</span><strong class="good">$+3.27</strong></div><div><span>Running P&amp;L</span><strong class="good">$+0.18</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Sociedad U2.5</strong><small>Sociedad 0-0 Celta &middot; 2026-09-04 03:00 &middot; @1.28</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Brighton U2.5</strong><small>Brighton 1-1 Leeds &middot; 2026-09-05 22:00 &middot; @1.29</small></div></div></div></article><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-05 02:30</span><h3>#6 Balanced 3-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@3.54</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$17.70</strong></div><div><span>Profit / loss</span><strong class="good">$+12.70</strong></div><div><span>Running P&amp;L</span><strong class="bad">$-3.09</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Arsenal U2.5</strong><small>Aston Villa 0-1 Arsenal &middot; 2026-09-01 03:00 &middot; @1.42</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Toulouse U2.5</strong><small>Toulouse 0-1 Lille &middot; 2026-09-04 02:45 &middot; @1.92</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Stuttgart AH +2.5</strong><small>Stuttgart 4-1 FC Koln &middot; 2026-09-05 02:30 &middot; @1.30</small></div></div></div></article><article class="parley-history-card win"><div class="parley-history-card-head"><div><span>Finished 2026-09-05 02:30</span><h3>#5 Conservative 2-leg</h3></div><strong class="parley-outcome win">WON</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@1.84</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$9.20</strong></div><div><span>Profit / loss</span><strong class="good">$+4.20</strong></div><div><span>Running P&amp;L</span><strong class="bad">$-15.80</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Arsenal U2.5</strong><small>Aston Villa 0-1 Arsenal &middot; 2026-09-01 03:00 &middot; @1.42</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Stuttgart AH +2.5</strong><small>Stuttgart 4-1 FC Koln &middot; 2026-09-05 02:30 &middot; @1.30</small></div></div></div></article><article class="parley-history-card loss"><div class="parley-history-card-head"><div><span>Finished 2026-09-01 03:00</span><h3>#4 Balanced 3-leg</h3></div><strong class="parley-outcome loss">LOST</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@2.49</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$0.00</strong></div><div><span>Profit / loss</span><strong class="bad">$-5.00</strong></div><div><span>Running P&amp;L</span><strong class="bad">$-20.00</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg pending"><span class="leg-outcome pending">NOT SETTLED</span><div class="parley-history-leg-main"><strong>Nice AH +1.5</strong><small>Paris FC vs Nice &middot; 2026-08-30 21:00 &middot; @1.29</small></div></div><div class="parley-history-leg loss"><span class="leg-outcome loss">LOST</span><div class="parley-history-leg-main"><strong>Ipswich AH +2.5</strong><small>Man United 5-2 Ipswich &middot; 2026-08-30 23:30 &middot; @1.36</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Arsenal U2.5</strong><small>Aston Villa 0-1 Arsenal &middot; 2026-09-01 03:00 &middot; @1.42</small></div></div></div></article><article class="parley-history-card loss"><div class="parley-history-card-head"><div><span>Finished 2026-09-01 03:00</span><h3>#3 Conservative 2-leg</h3></div><strong class="parley-outcome loss">LOST</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@1.93</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$0.00</strong></div><div><span>Profit / loss</span><strong class="bad">$-5.00</strong></div><div><span>Running P&amp;L</span><strong class="bad">$-15.00</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg loss"><span class="leg-outcome loss">LOST</span><div class="parley-history-leg-main"><strong>Ipswich AH +2.5</strong><small>Man United 5-2 Ipswich &middot; 2026-08-30 23:30 &middot; @1.36</small></div></div><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Arsenal U2.5</strong><small>Aston Villa 0-1 Arsenal &middot; 2026-09-01 03:00 &middot; @1.42</small></div></div></div></article><article class="parley-history-card loss"><div class="parley-history-card-head"><div><span>Finished 2026-05-25 03:00</span><h3>#2 Balanced 3-leg</h3></div><strong class="parley-outcome loss">LOST</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@2.03</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$0.00</strong></div><div><span>Profit / loss</span><strong class="bad">$-5.00</strong></div><div><span>Running P&amp;L</span><strong class="bad">$-10.00</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Ath Bilbao AH +2.5</strong><small>Real Madrid 4-2 Ath Bilbao &middot; 2026-05-24 03:00 &middot; @1.30</small></div></div><div class="parley-history-leg loss"><span class="leg-outcome loss">LOST</span><div class="parley-history-leg-main"><strong>Real Oviedo AH +2.5</strong><small>Mallorca 3-0 Real Oviedo &middot; 2026-05-24 03:00 &middot; @1.25</small></div></div><div class="parley-history-leg loss"><span class="leg-outcome loss">LOST</span><div class="parley-history-leg-main"><strong>Atletico Madrid AH +1.5</strong><small>Villarreal 5-1 Atletico Madrid &middot; 2026-05-25 03:00 &middot; @1.25</small></div></div></div></article><article class="parley-history-card loss"><div class="parley-history-card-head"><div><span>Finished 2026-05-24 03:00</span><h3>#1 Conservative 2-leg</h3></div><strong class="parley-outcome loss">LOST</strong></div><div class="parley-history-numbers"><div><span>Total odds</span><strong>@1.62</strong></div><div><span>Stake</span><strong>$5.00</strong></div><div><span>Payout</span><strong>$0.00</strong></div><div><span>Profit / loss</span><strong class="bad">$-5.00</strong></div><div><span>Running P&amp;L</span><strong class="bad">$-5.00</strong></div></div><div class="parley-history-legs"><div class="parley-history-leg win"><span class="leg-outcome win">WON</span><div class="parley-history-leg-main"><strong>Ath Bilbao AH +2.5</strong><small>Real Madrid 4-2 Ath Bilbao &middot; 2026-05-24 03:00 &middot; @1.30</small></div></div><div class="parley-history-leg loss"><span class="leg-outcome loss">LOST</span><div class="parley-history-leg-main"><strong>Real Oviedo AH +2.5</strong><small>Mallorca 3-0 Real Oviedo &middot; 2026-05-24 03:00 &middot; @1.25</small></div></div></div></article></div><div class="pagination parley-history-pagination"><span id="parley-history-page-status" aria-live="polite"></span><div id="parley-history-page-buttons" class="pagination-buttons"></div></div></section>
 </section>
 
 </main>
 <script>
 const KEY = 'rollo-range-results-v1';
-const PICKS = {"D": [{"id": 93, "odds": 2.5974, "stake": 10.0, "status": "pending"}, {"id": 94, "odds": 2.5974, "stake": 10.0, "status": "pending"}, {"id": 95, "odds": 1.9802, "stake": 10.0, "status": "pending"}, {"id": 96, "odds": 2.1739, "stake": 10.0, "status": "pending"}, {"id": 97, "odds": 1.7094, "stake": 10.0, "status": "pending"}, {"id": 98, "odds": 2.4096, "stake": 10.0, "status": "pending"}, {"id": 99, "odds": 2.2472, "stake": 10.0, "status": "pending"}], "C": []};
+const PICKS = {"D": [{"id": 133, "odds": 1.7699, "stake": 10.0, "status": "pending"}, {"id": 134, "odds": 1.9802, "stake": 10.0, "status": "pending"}, {"id": 135, "odds": 1.8182, "stake": 10.0, "status": "pending"}, {"id": 136, "odds": 2.2727, "stake": 10.0, "status": "pending"}, {"id": 137, "odds": 1.8349, "stake": 10.0, "status": "pending"}], "C": []};
 const BANK = {"D": 100.0, "C": 100.0};
-const SETTLED = {"D": {"wins": 17, "losses": 9, "pushes": 1, "staked": 270.0, "pnl": 79.6}, "C": {"wins": 4, "losses": 21, "pushes": 0, "staked": 250.0, "pnl": -96.0}};
+const SETTLED = {"D": {"wins": 41, "losses": 25, "pushes": 1, "staked": 670.0, "pnl": 168.86100000000002}, "C": {"wins": 4, "losses": 21, "pushes": 0, "staked": 250.0, "pnl": -96.0}};
 const ACTIVE_RANGES = ["D", "C"];
+const FIXTURE_PAGE_SIZE = 10;
+const LOW_RISK_HISTORY_PAGE_SIZE = 10;
+const PARLEY_HISTORY_PAGE_SIZE = 5;
+let fixturePage = 1;
+let lowRiskHistoryPage = 1;
+let parleyHistoryPage = 1;
 let state = {};
 try {
   state = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -693,7 +651,88 @@ function updateRange(range) {
   bankEl.className = pnl >= 0 ? 'good' : 'bad';
 }
 
+function renderFixtureOddsPage(requestedPage) {
+  const body = document.getElementById('fixture-odds-body');
+  const status = document.getElementById('fixture-page-status');
+  const buttons = document.getElementById('fixture-page-buttons');
+  if (!body || !status || !buttons) return;
+
+  const rows = Array.from(body.querySelectorAll('.fixture-odds-row'));
+  const totalPages = Math.max(1, Math.ceil(rows.length / FIXTURE_PAGE_SIZE));
+  fixturePage = Math.min(Math.max(Number(requestedPage) || 1, 1), totalPages);
+  const start = (fixturePage - 1) * FIXTURE_PAGE_SIZE;
+  const end = Math.min(start + FIXTURE_PAGE_SIZE, rows.length);
+
+  rows.forEach((row, index) => {
+    row.classList.toggle('hidden', index < start || index >= end);
+  });
+  status.textContent = `Showing ${rows.length ? start + 1 : 0}-${end} of ${rows.length} · Page ${fixturePage} of ${totalPages}`;
+
+  const controls = [];
+  controls.push(`<button type="button" ${fixturePage === 1 ? 'disabled' : ''} onclick="renderFixtureOddsPage(${fixturePage - 1})">Prev</button>`);
+  for (let page = 1; page <= totalPages; page++) {
+    controls.push(`<button type="button" class="${page === fixturePage ? 'on' : ''}" onclick="renderFixtureOddsPage(${page})">${page}</button>`);
+  }
+  controls.push(`<button type="button" ${fixturePage === totalPages ? 'disabled' : ''} onclick="renderFixtureOddsPage(${fixturePage + 1})">Next</button>`);
+  buttons.innerHTML = controls.join('');
+}
+
+function renderParleyHistoryPage(requestedPage) {
+  const list = document.querySelector('.parley-history-list');
+  const status = document.getElementById('parley-history-page-status');
+  const buttons = document.getElementById('parley-history-page-buttons');
+  if (!list || !status || !buttons) return;
+
+  const cards = Array.from(list.querySelectorAll('.parley-history-card'));
+  const totalPages = Math.max(1, Math.ceil(cards.length / PARLEY_HISTORY_PAGE_SIZE));
+  parleyHistoryPage = Math.min(Math.max(Number(requestedPage) || 1, 1), totalPages);
+  const start = (parleyHistoryPage - 1) * PARLEY_HISTORY_PAGE_SIZE;
+  const end = Math.min(start + PARLEY_HISTORY_PAGE_SIZE, cards.length);
+
+  cards.forEach((card, index) => {
+    card.classList.toggle('hidden', index < start || index >= end);
+  });
+  status.textContent = `Showing ${cards.length ? start + 1 : 0}-${end} of ${cards.length} settled parlays · Page ${parleyHistoryPage} of ${totalPages}`;
+
+  const controls = [];
+  controls.push(`<button type="button" ${parleyHistoryPage === 1 ? 'disabled' : ''} onclick="renderParleyHistoryPage(${parleyHistoryPage - 1})">Prev</button>`);
+  for (let page = 1; page <= totalPages; page++) {
+    controls.push(`<button type="button" class="${page === parleyHistoryPage ? 'on' : ''}" onclick="renderParleyHistoryPage(${page})">${page}</button>`);
+  }
+  controls.push(`<button type="button" ${parleyHistoryPage === totalPages ? 'disabled' : ''} onclick="renderParleyHistoryPage(${parleyHistoryPage + 1})">Next</button>`);
+  buttons.innerHTML = controls.join('');
+}
+
+function renderLowRiskHistoryPage(requestedPage) {
+  const body = document.getElementById('low-risk-history-body');
+  const status = document.getElementById('low-risk-history-page-status');
+  const buttons = document.getElementById('low-risk-history-page-buttons');
+  if (!body || !status || !buttons) return;
+
+  const rows = Array.from(body.querySelectorAll('.low-risk-history-row'));
+  const totalPages = Math.max(1, Math.ceil(rows.length / LOW_RISK_HISTORY_PAGE_SIZE));
+  lowRiskHistoryPage = Math.min(Math.max(Number(requestedPage) || 1, 1), totalPages);
+  const start = (lowRiskHistoryPage - 1) * LOW_RISK_HISTORY_PAGE_SIZE;
+  const end = Math.min(start + LOW_RISK_HISTORY_PAGE_SIZE, rows.length);
+
+  rows.forEach((row, index) => {
+    row.classList.toggle('hidden', index < start || index >= end);
+  });
+  status.textContent = `Showing ${rows.length ? start + 1 : 0}-${end} of ${rows.length} Low Risk results · Page ${lowRiskHistoryPage} of ${totalPages}`;
+
+  const controls = [];
+  controls.push(`<button type="button" ${lowRiskHistoryPage === 1 ? 'disabled' : ''} onclick="renderLowRiskHistoryPage(${lowRiskHistoryPage - 1})">Prev</button>`);
+  for (let page = 1; page <= totalPages; page++) {
+    controls.push(`<button type="button" class="${page === lowRiskHistoryPage ? 'on' : ''}" onclick="renderLowRiskHistoryPage(${page})">${page}</button>`);
+  }
+  controls.push(`<button type="button" ${lowRiskHistoryPage === totalPages ? 'disabled' : ''} onclick="renderLowRiskHistoryPage(${lowRiskHistoryPage + 1})">Next</button>`);
+  buttons.innerHTML = controls.join('');
+}
+
 ACTIVE_RANGES.forEach(updateRange);
+renderFixtureOddsPage(1);
+renderLowRiskHistoryPage(1);
+renderParleyHistoryPage(1);
 </script>
 </body>
 </html>

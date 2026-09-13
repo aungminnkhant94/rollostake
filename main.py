@@ -14,12 +14,14 @@ from models.core import init_db
 from models.dixon_coles import DixonColesModel, MatchResult, save_prediction
 from scrapers.historical_loader import HistoricalDataLoader, get_historical_matches
 from scrapers.stake_scraper import fetch_all_leagues
+from analysis.adjustment_layers import AdjustmentLayerEngine, save_prediction_layers
 from analysis.edge_calculator import EdgeCalculator
 from analysis.fatigue import FatigueAnalyzer, save_fatigue_analysis
 from dashboard.generator import DashboardGenerator
 from tests.backtest import Backtester
 from config.paths import DB_PATH
 from config.settings import load_settings
+from utils.match_history import reconcile_history
 
 
 def _decision_from_probs(win_condition: bool, loss_condition: bool) -> str:
@@ -89,7 +91,7 @@ def _settle_selection(selection, market, home_team, away_team, home_goals, away_
 
     return None
 
-def run_pipeline(leagues=None, skip_scrape=False, use_fatigue=True):
+def run_pipeline(leagues=None, skip_scrape=False, use_fatigue=True, predictions_only=True):
     """
     Run the full betting model pipeline.
     
@@ -120,17 +122,18 @@ def run_pipeline(leagues=None, skip_scrape=False, use_fatigue=True):
     # Try loading from database first (has real data from football-data.co.uk)
     import sqlite3
     db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
     c = db.cursor()
-    c.execute('SELECT home_team, away_team, home_goals, away_goals, kickoff, league FROM matches WHERE status="completed" AND home_goals IS NOT NULL')
-    rows = c.fetchall()
+    c.execute('SELECT match_id, home_team, away_team, home_goals, away_goals, kickoff, league FROM matches WHERE status="completed" AND home_goals IS NOT NULL AND away_goals IS NOT NULL')
+    rows = reconcile_history(c.fetchall())
     db.close()
     
     historical = []
     for row in rows:
         historical.append({
-            'home_team': row[0], 'away_team': row[1],
-            'home_goals': row[2], 'away_goals': row[3],
-            'date': row[4], 'league': row[5]
+            'home_team': row['home_team'], 'away_team': row['away_team'],
+            'home_goals': row['home_goals'], 'away_goals': row['away_goals'],
+            'date': row['kickoff'], 'league': row['league']
         })
     
     if len(historical) < 50:
@@ -237,15 +240,26 @@ def run_pipeline(leagues=None, skip_scrape=False, use_fatigue=True):
     else:
         print("\n[4/8] Skipping scrape (using existing data)")
     
-    # Step 5: Generate predictions using per-league models
+    # Step 5: Generate predictions using per-league models and the 14-layer
+    # football-context adjustment stack.
     print("\n[5/8] Generating predictions...")
+    layer_engine = AdjustmentLayerEngine(settings)
+    layer_active_count = 0
     for match in upcoming:
         league = match.get('league', 'EPL')
         model = league_models.get(league, default_model)
         preds = model.predict(match['home_team'], match['away_team'])
+        preds = layer_engine.apply(match, preds)
         save_prediction(match['match_id'], preds)
+        save_prediction_layers(match['match_id'], preds.get('layers', []))
+        layer_active_count += sum(1 for layer in preds.get('layers', []) if layer.active)
 
     print(f"Generated predictions for {len(upcoming)} matches")
+    print(f"  14-layer adjustments recorded: {layer_active_count} active layer hits")
+
+    if predictions_only:
+        print("Predictions saved for review; card publication is a separate step.")
+        return []
 
     # Step 6: Analyze upcoming matches (already loaded in step 2b)
     print("\n[6/8] Analyzing upcoming matches...")
@@ -256,9 +270,6 @@ def run_pipeline(leagues=None, skip_scrape=False, use_fatigue=True):
         print("\n[6/8] Running fatigue analysis...")
         fatigue = FatigueAnalyzer()
         
-        # Track if we applied any adjustments
-        adjustments_applied = 0
-        
         for match in upcoming:
             analysis = fatigue.analyze_matchup(
                 match['home_team'], 
@@ -267,38 +278,8 @@ def run_pipeline(leagues=None, skip_scrape=False, use_fatigue=True):
             )
             save_fatigue_analysis(match['match_id'], analysis)
             
-            # Apply fatigue adjustment to predictions if significant
-            if abs(analysis['fatigue_diff']) >= 10:
-                # Get current prediction
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute('SELECT prob_home_win, prob_away_win FROM predictions WHERE match_id = ?', (match['match_id'],))
-                row = c.fetchone()
-                conn.close()
-                
-                if row:
-                    # Adjust home win probability based on fatigue advantage
-                    adjustment = analysis['fatigue_diff'] * 0.001  # Small adjustment
-                    new_home = max(0.05, min(0.95, row[0] + adjustment))
-                    new_away = max(0.05, min(0.95, row[1] - adjustment))
-                    
-                    # Update prediction
-                    conn = sqlite3.connect(DB_PATH)
-                    c = conn.cursor()
-                    c.execute('''
-                        UPDATE predictions 
-                        SET prob_home_win = ?, prob_away_win = ?
-                        WHERE match_id = ?
-                    ''', (new_home, new_away, match['match_id']))
-                    conn.commit()
-                    conn.close()
-                    adjustments_applied += 1
-            
             if analysis['fatigue_advantage'] != 'even':
                 print(f"  {match['home_team']} vs {match['away_team']}: {analysis['fatigue_advantage_desc']} (diff: {analysis['fatigue_diff']:+.1f})")
-        
-        if adjustments_applied > 0:
-            print(f"  Applied fatigue adjustments to {adjustments_applied} matches")
     else:
         print("\n[6/8] Skipping fatigue analysis")
     
@@ -331,6 +312,7 @@ def run_pipeline(leagues=None, skip_scrape=False, use_fatigue=True):
         use_ranges=use_ranges,
         range_configs=range_configs,
         bookmaker=settings.get('default_bookmaker', 'polymarket'),
+        context_gate=settings.get('context_gate'),
     )
     if use_ranges:
         picks = calc.generate_range_picks(requested_leagues[0] if requested_leagues else None)
@@ -420,7 +402,7 @@ def update_results(match_id, result=None, home_goals=None, away_goals=None):
     c.execute('''
         SELECT id, selection, market, odds, stake, range_code, quality
         FROM picks
-        WHERE match_id = ?
+        WHERE match_id = ? AND status IN ('pending', 'settled')
     ''', (match_id,))
 
     settled = []
@@ -542,6 +524,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip-scrape', action='store_true', help='Skip odds scraping')
     parser.add_argument('--leagues', nargs='+', help='Leagues to process')
     parser.add_argument('--no-fatigue', action='store_true', help='Skip fatigue analysis')
+    parser.add_argument('--predictions-only', action='store_true', default=True, help='Save fitted predictions for review (default); publish separately with rebuild_card.py')
     parser.add_argument('--backtest', action='store_true', help='Run backtest only')
     parser.add_argument('--update-result', nargs=4, metavar=('MATCH_ID', 'RESULT', 'HG', 'AG'), help='Update match result')
     parser.add_argument('--settle-pick', nargs=2, metavar=('PICK_ID', 'RESULT'), help='Settle one pick: win, loss, push, or pending')
@@ -566,5 +549,6 @@ if __name__ == '__main__':
         run_pipeline(
             leagues=args.leagues,
             skip_scrape=args.skip_scrape,
-            use_fatigue=not args.no_fatigue
+            use_fatigue=not args.no_fatigue,
+            predictions_only=args.predictions_only,
         )
