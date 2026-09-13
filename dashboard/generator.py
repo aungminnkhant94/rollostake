@@ -7,6 +7,7 @@ import os
 import sqlite3
 import sys
 from collections import defaultdict
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List
@@ -23,9 +24,10 @@ from utils.match_resolver import parse_kickoff_utc
 class DashboardGenerator:
     """Generates a static HTML dashboard for the risk-band workflow."""
 
-    def __init__(self):
-        ensure_runtime_dirs()
-        init_db()
+    def __init__(self, initialize=True):
+        if initialize:
+            ensure_runtime_dirs()
+            init_db()
         self.output_file = DASHBOARD_DIR / "index.html"
         self.settings = load_settings()
         try:
@@ -52,7 +54,12 @@ class DashboardGenerator:
         c.execute(
             """
             SELECT p.*, m.home_team, m.away_team, m.league, m.kickoff,
-                   m.home_fatigue_score, m.away_fatigue_score, m.fatigue_advantage
+                   m.home_fatigue_score, m.away_fatigue_score, m.fatigue_advantage,
+                   (SELECT MAX(pr.calculated_at) FROM predictions pr WHERE pr.match_id=p.match_id) AS latest_prediction_at,
+                   (SELECT GROUP_CONCAT(DISTINCT l.slip_id)
+                    FROM parley_legs l
+                    JOIN parley_slips s ON s.id=l.slip_id
+                    WHERE l.match_id=p.match_id AND s.status='pending') AS pending_parley_ids
             FROM picks p
             JOIN matches m ON p.match_id = m.match_id
             WHERE p.status = 'pending'
@@ -266,16 +273,27 @@ class DashboardGenerator:
         if not results:
             return '<div class="history empty-history">No settled picks yet for this risk band.</div>'
 
+        chronological = sorted(
+            results,
+            key=lambda result: (
+                self._kickoff_sort_key(result.get("played_at")),
+                int(result.get("id") or 0),
+            ),
+        )
         running = 0.0
-        rows = []
-        for result in results:
+        cumulative_rows = []
+        for result in chronological:
             running += float(result.get("pnl") or 0)
+            cumulative_rows.append((result, running))
+
+        rows = []
+        for result, cumulative_pnl in reversed(cumulative_rows):
             match = html.escape(f"{result.get('home_team') or ''} vs {result.get('away_team') or ''}".strip())
             selection = html.escape(str(result.get("selection") or ""))
             risk_name = html.escape(self._risk_name(str(result.get("range_code") or "")))
             played_at = html.escape(self._display_kickoff(result.get("played_at")))
             rows.append(
-                "<tr>"
+                f'<tr class="{"low-risk-history-row" if code == "D" else ""}">'
                 f"<td>{played_at}</td>"
                 f"<td>{risk_name}</td>"
                 f"<td>{html.escape(str(result.get('quality') or ''))}</td>"
@@ -283,17 +301,26 @@ class DashboardGenerator:
                 f"<td>{selection}</td>"
                 f"<td>{html.escape(str(result.get('result') or ''))}</td>"
                 f"<td>${float(result.get('pnl') or 0):+,.0f}</td>"
-                f"<td>${running:+,.0f}</td>"
+                f"<td>${cumulative_pnl:+,.0f}</td>"
                 "</tr>"
             )
 
+        pagination = (
+            '<div class="pagination low-risk-history-pagination">'
+            '<span id="low-risk-history-page-status" aria-live="polite"></span>'
+            '<div id="low-risk-history-page-buttons" class="pagination-buttons"></div>'
+            '</div>'
+            if code == "D"
+            else ""
+        )
+        tbody_id = ' id="low-risk-history-body"' if code == "D" else ""
         return (
             f'<div class="history"><h2>{html.escape(self._risk_name(code)) if code else "Settled"} History</h2><table><thead><tr>'
             '<th>Played</th><th>Risk Band</th><th>Quality</th><th>Match</th>'
             '<th>Pick</th><th>Result</th><th>P&L</th><th>Cumulative</th>'
-            '</tr></thead><tbody>'
+            f'</tr></thead><tbody{tbody_id}>'
             + ''.join(rows)
-            + '</tbody></table></div>'
+            + f'</tbody></table>{pagination}</div>'
         )
 
     def _quality_label(self, quality: str) -> str:
@@ -350,6 +377,8 @@ class DashboardGenerator:
             SELECT home_team, away_team, home_goals, away_goals, kickoff
             FROM matches
             WHERE status = 'completed'
+            AND home_goals IS NOT NULL
+            AND away_goals IS NOT NULL
             AND (
                 (home_team = ? AND away_team = ?)
                 OR (home_team = ? AND away_team = ?)
@@ -519,6 +548,21 @@ class DashboardGenerator:
         pick_id = int(pick["id"])
         win_profit = round(float(pick["stake"]) * (float(pick["odds"]) - 1))
         reasoning = self._pick_reasoning(pick)
+        retained_notice = ''
+        try:
+            created = datetime.fromisoformat(str(pick.get('created_at')).replace('Z', '+00:00'))
+            calculated = datetime.fromisoformat(str(pick.get('latest_prediction_at')).replace('Z', '+00:00'))
+            created = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
+            calculated = calculated.replace(tzinfo=timezone.utc) if calculated.tzinfo is None else calculated
+            if created < calculated:
+                retained_notice = '<div class="pick-meta">Earlier pick · retained for settlement</div>'
+        except (TypeError, ValueError):
+            pass
+        if pick.get('pending_parley_ids'):
+            slip_ids = ', #'.join(str(pick['pending_parley_ids']).split(','))
+            retained_notice += (
+                f'<div class="pick-meta"><strong>Exposure:</strong> also included in pending Parley #{html.escape(slip_ids)}</div>'
+            )
         
         # Get H2H and form
         h2h_html = self._get_h2h(pick.get('home_team', ''), pick.get('away_team', ''))
@@ -559,6 +603,7 @@ class DashboardGenerator:
     <div class="pick-main">
       <div class="pick-title"><span class="market-pill">{market}</span>{selection} <span class="badge {quality_class}">{self._quality_label(quality)}</span></div>
       <div class="pick-meta">{matchup} · <span>{kickoff}</span> · {league}</div>
+      {retained_notice}
     </div>
     <div class="numbers">
       <div><strong>@{float(pick['odds']):.2f}</strong><span>Odds</span></div>
@@ -685,12 +730,17 @@ class DashboardGenerator:
             flat_stake=float(self.settings.get("flat_stake", 10)),
             range_configs=self.range_configs,
             bookmaker=self.settings.get("default_bookmaker"),
+            context_gate=self.settings.get("context_gate"),
         )
         learned = calc._learned_performance_adjustments()
         loss_traps = calc._loss_trap_segments()
+        reliability = calc._settled_market_reliability()
         raw_candidates = calc.generate_picks(min_edge=0.02)
         candidates = []
-        for pick in raw_candidates:
+        for raw_pick in raw_candidates:
+            pick = calc._apply_settled_reliability(raw_pick, "D", reliability)
+            if calc.context_gate_enabled and pick.missing_context:
+                continue
             odds = float(pick.odds or 0)
             model_prob = float(pick.model_prob or 0)
             if odds < 1.25 or odds > 2.70:
@@ -698,6 +748,8 @@ class DashboardGenerator:
             if model_prob < 0.54:
                 continue
             if pick.edge_pct < 3.0:
+                continue
+            if pick.quality == "SKIP":
                 continue
             if calc._is_hard_loss_trap(pick, "D", loss_traps) or calc._is_hard_loss_trap(pick, "C", loss_traps):
                 continue
@@ -773,41 +825,35 @@ class DashboardGenerator:
         )
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
-    def _clear_replaceable_pending_parleys(self, c) -> None:
-        now_utc = datetime.now(timezone.utc)
-        c.execute(
-            """
-            SELECT s.id, MIN(m.kickoff) AS first_kickoff
-            FROM parley_slips s
-            JOIN parley_legs l ON s.id = l.slip_id
-            JOIN matches m ON l.match_id = m.match_id
-            WHERE s.status = 'pending'
-            GROUP BY s.id
-            """
-        )
-        replaceable_ids = []
-        for slip_id, first_kickoff in c.fetchall():
-            kickoff_utc = parse_kickoff_utc(first_kickoff)
-            if kickoff_utc is None or kickoff_utc >= now_utc:
-                replaceable_ids.append(slip_id)
-        if not replaceable_ids:
-            return
-        placeholders = ",".join("?" for _ in replaceable_ids)
-        c.execute(f"DELETE FROM parley_legs WHERE slip_id IN ({placeholders})", replaceable_ids)
-        c.execute(f"DELETE FROM parley_slips WHERE id IN ({placeholders})", replaceable_ids)
-
-    def save_parley_slips(self) -> List[Dict]:
+    def preview_parley_slips(self, singles=None) -> List[Dict]:
+        """Draft new slips without reusing any pending or newly proposed exposure."""
         candidates = self._parley_candidates()
         stake = max(float(self.settings.get("flat_stake", 10)) / 2, 1)
-        slips = [
-            self._build_parley_slip("Conservative 2-leg", candidates, 2, max_boosters=0),
-            self._build_parley_slip("Balanced 3-leg", candidates, 3, max_boosters=1),
-        ]
-        slips = [slip for slip in slips if len(slip.get("legs", [])) >= 2]
+        with closing(sqlite3.connect(DB_PATH)) as conn:
+            pnl, reserved = conn.execute("SELECT COALESCE(SUM(CASE WHEN status='settled' THEN pnl ELSE 0 END),0), COALESCE(SUM(CASE WHEN status='pending' THEN stake ELSE 0 END),0) FROM parley_slips").fetchone()
+            available = float(self.settings.get('bankroll', 100)) + pnl - reserved
+            used = {r[0] for r in conn.execute("SELECT l.match_id FROM parley_legs l JOIN parley_slips s ON s.id=l.slip_id WHERE s.status='pending'")}
+            used.update(r[0] for r in conn.execute("SELECT match_id FROM picks WHERE status='pending'"))
+            if singles is not None:
+                used.update(p.match_id for p in singles)
+        slips = []
+        for label, legs, boosters in [('Conservative 2-leg', 2, 0), ('Balanced 3-leg', 3, 1)]:
+            if available < stake:
+                break
+            slip = self._build_parley_slip(label, [p for p in candidates if p['match_id'] not in used], legs, max_boosters=boosters)
+            if len(slip['legs']) != legs:
+                continue
+            slip['stake'] = stake
+            slips.append(slip)
+            available -= stake
+            used.update(p['match_id'] for p in slip['legs'])
+        return slips
 
+    def save_parley_slips(self, slips=None) -> List[Dict]:
+        if slips is None:
+            slips = self.preview_parley_slips()
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        self._clear_replaceable_pending_parleys(c)
         saved = []
         for slip in slips:
             slip_key = self._parley_slip_key(slip)
@@ -817,7 +863,7 @@ class DashboardGenerator:
                 (slip_key, label, odds, model_prob, stake, quality, status)
                 VALUES (?, ?, ?, ?, ?, 'KEEP', 'pending')
                 """,
-                (slip_key, slip["label"], slip["odds"], slip["model_prob"], stake),
+                (slip_key, slip["label"], slip["odds"], slip["model_prob"], slip['stake']),
             )
             c.execute("SELECT id FROM parley_slips WHERE slip_key = ?", (slip_key,))
             row = c.fetchone()
@@ -969,6 +1015,18 @@ class DashboardGenerator:
             "roi": roi,
         }
 
+    def _parley_history_kickoff(self, slip: Dict) -> str:
+        legs = slip.get("legs", [])
+        completed_kickoffs = [
+            leg.get("kickoff")
+            for leg in legs
+            if leg.get("result") in ("win", "loss", "push") and leg.get("kickoff")
+        ]
+        kickoffs = completed_kickoffs or [
+            leg.get("kickoff") for leg in legs if leg.get("kickoff")
+        ]
+        return max(kickoffs, key=self._kickoff_sort_key, default="")
+
     def _render_parley_history(self, slips: List[Dict]) -> str:
         settled = [
             slip for slip in slips
@@ -977,36 +1035,90 @@ class DashboardGenerator:
         if not settled:
             return '<div class="history empty-history">No settled parley history yet.</div>'
 
+        chronological = sorted(
+            settled,
+            key=lambda slip: (
+                self._kickoff_sort_key(self._parley_history_kickoff(slip)),
+                int(slip.get("id") or 0),
+            ),
+        )
         running = 0.0
-        rows = []
-        for slip in settled:
+        cumulative_slips = []
+        for slip in chronological:
             running += float(slip.get("pnl") or 0)
+            cumulative_slips.append((slip, running))
+
+        cards = []
+        for slip, cumulative_pnl in reversed(cumulative_slips):
             legs = slip.get("legs", [])
-            played_at = max((self._kickoff_sort_key(leg.get("kickoff")) for leg in legs), default=datetime.min)
-            played_label = played_at.strftime("%Y-%m-%d %H:%M") if played_at != datetime.min else ""
-            leg_text = " / ".join(
-                f"{leg.get('home_team') or ''} vs {leg.get('away_team') or ''}: {leg.get('selection') or ''}"
-                for leg in legs
-            )
-            rows.append(
-                "<tr>"
-                f"<td>{html.escape(played_label)}</td>"
-                "<td>Parley</td>"
-                f"<td>{html.escape(str(slip.get('quality') or 'KEEP'))}</td>"
-                f"<td>{html.escape(str(slip.get('label') or 'Parley'))}</td>"
-                f"<td>{html.escape(leg_text)}</td>"
-                f"<td>{html.escape(str(slip.get('result') or ''))}</td>"
-                f"<td>${float(slip.get('pnl') or 0):+,.0f}</td>"
-                f"<td>${running:+,.0f}</td>"
-                "</tr>"
+            played_kickoff = self._parley_history_kickoff(slip)
+            played_label = self._display_kickoff(played_kickoff) if played_kickoff else ""
+            result = str(slip.get("result") or "push").lower()
+            result_label = {"win": "WON", "loss": "LOST", "push": "PUSH"}.get(result, result.upper())
+            slip_id = int(slip.get("id") or 0)
+            stake = float(slip.get("stake") or 0)
+            payout = float(slip.get("payout") or 0)
+            pnl = float(slip.get("pnl") or 0)
+
+            leg_rows = []
+            for leg in legs:
+                leg_result = str(leg.get("result") or "pending").lower()
+                leg_label = {
+                    "win": "WON",
+                    "loss": "LOST",
+                    "push": "PUSH",
+                    "pending": "NOT SETTLED",
+                }.get(leg_result, leg_result.upper())
+                home_team = html.escape(str(leg.get("home_team") or ""))
+                away_team = html.escape(str(leg.get("away_team") or ""))
+                home_goals = leg.get("home_goals")
+                away_goals = leg.get("away_goals")
+                if home_goals is not None and away_goals is not None:
+                    match_line = f"{home_team} {int(home_goals)}-{int(away_goals)} {away_team}"
+                else:
+                    match_line = f"{home_team} vs {away_team}"
+                kickoff = html.escape(self._display_kickoff(leg.get("kickoff")))
+                leg_rows.append(
+                    f'<div class="parley-history-leg {leg_result}">'
+                    f'<span class="leg-outcome {leg_result}">{leg_label}</span>'
+                    '<div class="parley-history-leg-main">'
+                    f'<strong>{html.escape(str(leg.get("selection") or ""))}</strong>'
+                    f'<small>{match_line} &middot; {kickoff} &middot; @{float(leg.get("odds") or 0):.2f}</small>'
+                    '</div>'
+                    '</div>'
+                )
+
+            cards.append(
+                f'<article class="parley-history-card {result}">'
+                '<div class="parley-history-card-head">'
+                '<div>'
+                f'<span>Finished {html.escape(played_label)}</span>'
+                f'<h3>#{slip_id} {html.escape(str(slip.get("label") or "Parley"))}</h3>'
+                '</div>'
+                f'<strong class="parley-outcome {result}">{result_label}</strong>'
+                '</div>'
+                '<div class="parley-history-numbers">'
+                f'<div><span>Total odds</span><strong>@{float(slip.get("odds") or 0):.2f}</strong></div>'
+                f'<div><span>Stake</span><strong>${stake:,.2f}</strong></div>'
+                f'<div><span>Payout</span><strong>${payout:,.2f}</strong></div>'
+                f'<div><span>Profit / loss</span><strong class="{"good" if pnl >= 0 else "bad"}">${pnl:+,.2f}</strong></div>'
+                f'<div><span>Running P&amp;L</span><strong class="{"good" if cumulative_pnl >= 0 else "bad"}">${cumulative_pnl:+,.2f}</strong></div>'
+                '</div>'
+                f'<div class="parley-history-legs">{"".join(leg_rows)}</div>'
+                '</article>'
             )
         return (
-            '<div class="history"><h2>Parley History</h2><table><thead><tr>'
-            '<th>Played</th><th>Risk Band</th><th>Quality</th><th>Slip</th>'
-            '<th>Legs</th><th>Result</th><th>P&L</th><th>Cumulative</th>'
-            '</tr></thead><tbody>'
-            + ''.join(rows)
-            + '</tbody></table></div>'
+            '<section class="parley-history">'
+            '<div class="parley-history-heading">'
+            '<div><span>Settled slips</span><h2>Parley Result History</h2></div>'
+            '<p>Newest first. Each card shows whether the whole parley won or lost and what happened to every leg.</p>'
+            '</div>'
+            f'<div class="parley-history-list">{"".join(cards)}</div>'
+            '<div class="pagination parley-history-pagination">'
+            '<span id="parley-history-page-status" aria-live="polite"></span>'
+            '<div id="parley-history-page-buttons" class="pagination-buttons"></div>'
+            '</div>'
+            '</section>'
         )
 
     def _render_parley(self) -> str:
@@ -1049,7 +1161,7 @@ class DashboardGenerator:
     <div><span>Bank</span><strong class="{pnl_class}">${settled_bank:,.2f}</strong></div>
   </div>
   <div class="range-note">{len(pending_slips)} pending parley slips &middot; every leg must win &middot; Parley is now saved and settled separately from High Risk and Low Risk.</div>
-  <div class="day-header"><span>Recommended Parley Slips</span><small>{len(pending_slips)} slips</small></div>
+  <div class="day-header"><span>Current Pending Parley</span><small>{len(pending_slips)} {'slip' if len(pending_slips) == 1 else 'slips'}</small></div>
   {"".join(cards)}
   {self._render_parley_history(saved_slips)}
 </section>
@@ -1096,7 +1208,7 @@ class DashboardGenerator:
         uncovered = sorted(
             [fixture for fixture in fixtures if int(fixture.get("odds_rows") or 0) == 0],
             key=lambda row: (row["_kickoff_local"], str(row.get("league") or ""), str(row.get("home_team") or "")),
-        )[:18]
+        )
 
         total_fixtures = sum(int(row["fixtures"] or 0) for row in rows)
         total_odds_fixtures = sum(int(row["odds_fixtures"] or 0) for row in rows)
@@ -1116,7 +1228,7 @@ class DashboardGenerator:
             )
 
         uncovered_rows = "".join(
-            "<tr>"
+            '<tr class="fixture-odds-row">'
             f"<td>{html.escape(row['_kickoff_local'].strftime('%Y-%m-%d %H:%M'))}</td>"
             f"<td>{html.escape(str(row.get('league') or ''))}</td>"
             f"<td>{html.escape(str(row.get('home_team') or ''))} vs {html.escape(str(row.get('away_team') or ''))}</td>"
@@ -1125,11 +1237,17 @@ class DashboardGenerator:
             for row in uncovered
         )
         uncovered_html = (
-            '<div class="history"><h2>Fetched Fixtures Without Polymarket Odds</h2><table><thead><tr>'
+            '<div class="history fixture-odds-history" id="fixture-odds-history">'
+            '<h2>Fetched Fixtures Without Polymarket Odds</h2>'
+            '<table><thead><tr>'
             '<th>Kickoff</th><th>League</th><th>Match</th><th>Status</th>'
-            '</tr></thead><tbody>'
+            '</tr></thead><tbody id="fixture-odds-body">'
             + uncovered_rows
-            + '</tbody></table></div>'
+            + '</tbody></table>'
+            + '<div class="pagination fixture-pagination">'
+            + '<span id="fixture-page-status"></span>'
+            + '<div id="fixture-page-buttons" class="pagination-buttons"></div>'
+            + '</div></div>'
             if uncovered_rows
             else ""
         )
@@ -1317,11 +1435,46 @@ button.loss {{ color:var(--bad); border-color:#ef444433; }}
 .history th,.history td {{ padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; font-size:.875rem; color:var(--muted); }}
 .history th {{ color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-size:.75rem; }}
 .empty-history {{ padding:18px; color:var(--muted); }}
+.pagination {{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; color:var(--muted); font-size:.875rem; }}
+.pagination-buttons {{ display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }}
+.pagination-buttons button {{ min-width:34px; }}
+.pagination-buttons button.on {{ color:var(--panel); background:var(--accent); border-color:var(--accent); }}
+.pagination-buttons button:disabled {{ opacity:.4; cursor:not-allowed; color:var(--muted); border-color:var(--line); }}
 .parley-pick {{ border-color:#3b82f633; }}
 .parley-legs {{ display:grid; gap:12px; margin-top:14px; }}
 .parley-leg {{ background:var(--panel-strong); border:1px solid var(--line); border-radius:12px; padding:12px; }}
 .parley-leg strong {{ color:var(--ink); }}
 .parley-leg small {{ display:block; color:var(--muted); margin:4px 0 8px; }}
+.parley-history {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; box-shadow:0 1px 3px var(--shadow); margin:24px 0; overflow:hidden; }}
+.parley-history-heading {{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid var(--line); }}
+.parley-history-heading span {{ display:block; color:var(--muted); font-size:.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }}
+.parley-history-heading h2 {{ color:var(--ink); font-size:1.25rem; line-height:1.2; }}
+.parley-history-heading p {{ color:var(--muted); max-width:460px; text-align:right; }}
+.parley-history-list {{ display:grid; gap:14px; padding:16px; }}
+.parley-history-card {{ background:var(--panel-strong); border:1px solid var(--line); border-left:5px solid var(--muted); border-radius:12px; padding:16px; }}
+.parley-history-card.win {{ border-left-color:var(--good); }}
+.parley-history-card.loss {{ border-left-color:var(--bad); }}
+.parley-history-card.push {{ border-left-color:var(--warn); }}
+.parley-history-card-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }}
+.parley-history-card-head span {{ color:var(--muted); font-size:.8rem; }}
+.parley-history-card-head h3 {{ color:var(--ink); font-size:1.1rem; margin-top:2px; }}
+.parley-outcome,.leg-outcome {{ display:inline-flex; align-items:center; justify-content:center; border-radius:9999px; font-weight:800; letter-spacing:.05em; }}
+.parley-outcome {{ min-width:82px; padding:7px 12px; font-size:.8rem; }}
+.parley-outcome.win,.leg-outcome.win {{ color:var(--good); background:#22c55e24; }}
+.parley-outcome.loss,.leg-outcome.loss {{ color:var(--bad); background:#ef444424; }}
+.parley-outcome.push,.leg-outcome.push {{ color:var(--warn); background:#f9731624; }}
+.leg-outcome.pending {{ color:var(--muted); background:#f5efe412; }}
+.parley-history-numbers {{ display:grid; grid-template-columns:repeat(5,minmax(105px,1fr)); gap:8px; margin-bottom:14px; }}
+.parley-history-numbers div {{ background:var(--panel); border-radius:9px; padding:9px 10px; }}
+.parley-history-numbers span {{ display:block; color:var(--muted); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }}
+.parley-history-numbers strong {{ color:var(--ink); display:block; margin-top:2px; }}
+.parley-history-legs {{ display:grid; gap:8px; }}
+.parley-history-leg {{ display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px; }}
+.leg-outcome {{ flex:0 0 92px; padding:5px 8px; font-size:.68rem; }}
+.parley-history-leg-main {{ min-width:0; }}
+.parley-history-leg-main strong {{ color:var(--ink); display:block; }}
+.parley-history-leg-main small {{ color:var(--muted); display:block; margin-top:2px; }}
+.parley-history-pagination {{ border-top:1px solid var(--line); }}
 .h2h {{ margin-top:12px; margin-bottom:12px; }}
 .h2h h3 {{ font-size:.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }}
 .h2h table {{ width:100%; border-collapse:collapse; font-size:.875rem; }}
@@ -1350,6 +1503,9 @@ button.loss {{ color:var(--bad); border-color:#ef444433; }}
   .numbers {{ width:100%; justify-content:space-between; }}
   .actions {{ width:100%; justify-content:flex-start; }}
   .pick-details {{ padding:14px 16px; }}
+  .parley-history-heading {{ flex-direction:column; }}
+  .parley-history-heading p {{ max-width:none; text-align:left; }}
+  .parley-history-numbers {{ grid-template-columns:repeat(2,minmax(110px,1fr)); }}
 }}
 @media (max-width:520px) {{
   .shell {{ padding:20px 12px 48px; }}
@@ -1362,9 +1518,15 @@ button.loss {{ color:var(--bad); border-color:#ef444433; }}
   .filter-bar {{ align-items:stretch; flex-direction:column; }}
   .filter-select {{ width:100%; }}
   .filter-count {{ margin-left:0; }}
+  .pagination {{ align-items:flex-start; flex-direction:column; }}
+  .pagination-buttons {{ justify-content:flex-start; }}
   .numbers {{ justify-content:flex-start; }}
   .numbers div {{ flex:1 1 88px; }}
   .result {{ text-align:left; }}
+  .parley-history-card-head {{ align-items:flex-start; flex-direction:column; }}
+  .parley-history-numbers {{ grid-template-columns:1fr 1fr; }}
+  .parley-history-leg {{ align-items:flex-start; flex-direction:column; }}
+  .leg-outcome {{ flex-basis:auto; }}
 }}
 @media (min-width:640px) {{
   .shell {{ padding:24px; }}
@@ -1400,6 +1562,12 @@ const PICKS = {json.dumps(js_picks)};
 const BANK = {json.dumps(js_bank)};
 const SETTLED = {json.dumps(js_settled)};
 const ACTIVE_RANGES = {active_codes_json};
+const FIXTURE_PAGE_SIZE = 10;
+const LOW_RISK_HISTORY_PAGE_SIZE = 10;
+const PARLEY_HISTORY_PAGE_SIZE = 5;
+let fixturePage = 1;
+let lowRiskHistoryPage = 1;
+let parleyHistoryPage = 1;
 let state = {{}};
 try {{
   state = JSON.parse(localStorage.getItem(KEY) || '{{}}');
@@ -1500,7 +1668,88 @@ function updateRange(range) {{
   bankEl.className = pnl >= 0 ? 'good' : 'bad';
 }}
 
+function renderFixtureOddsPage(requestedPage) {{
+  const body = document.getElementById('fixture-odds-body');
+  const status = document.getElementById('fixture-page-status');
+  const buttons = document.getElementById('fixture-page-buttons');
+  if (!body || !status || !buttons) return;
+
+  const rows = Array.from(body.querySelectorAll('.fixture-odds-row'));
+  const totalPages = Math.max(1, Math.ceil(rows.length / FIXTURE_PAGE_SIZE));
+  fixturePage = Math.min(Math.max(Number(requestedPage) || 1, 1), totalPages);
+  const start = (fixturePage - 1) * FIXTURE_PAGE_SIZE;
+  const end = Math.min(start + FIXTURE_PAGE_SIZE, rows.length);
+
+  rows.forEach((row, index) => {{
+    row.classList.toggle('hidden', index < start || index >= end);
+  }});
+  status.textContent = `Showing ${{rows.length ? start + 1 : 0}}-${{end}} of ${{rows.length}} · Page ${{fixturePage}} of ${{totalPages}}`;
+
+  const controls = [];
+  controls.push(`<button type="button" ${{fixturePage === 1 ? 'disabled' : ''}} onclick="renderFixtureOddsPage(${{fixturePage - 1}})">Prev</button>`);
+  for (let page = 1; page <= totalPages; page++) {{
+    controls.push(`<button type="button" class="${{page === fixturePage ? 'on' : ''}}" onclick="renderFixtureOddsPage(${{page}})">${{page}}</button>`);
+  }}
+  controls.push(`<button type="button" ${{fixturePage === totalPages ? 'disabled' : ''}} onclick="renderFixtureOddsPage(${{fixturePage + 1}})">Next</button>`);
+  buttons.innerHTML = controls.join('');
+}}
+
+function renderParleyHistoryPage(requestedPage) {{
+  const list = document.querySelector('.parley-history-list');
+  const status = document.getElementById('parley-history-page-status');
+  const buttons = document.getElementById('parley-history-page-buttons');
+  if (!list || !status || !buttons) return;
+
+  const cards = Array.from(list.querySelectorAll('.parley-history-card'));
+  const totalPages = Math.max(1, Math.ceil(cards.length / PARLEY_HISTORY_PAGE_SIZE));
+  parleyHistoryPage = Math.min(Math.max(Number(requestedPage) || 1, 1), totalPages);
+  const start = (parleyHistoryPage - 1) * PARLEY_HISTORY_PAGE_SIZE;
+  const end = Math.min(start + PARLEY_HISTORY_PAGE_SIZE, cards.length);
+
+  cards.forEach((card, index) => {{
+    card.classList.toggle('hidden', index < start || index >= end);
+  }});
+  status.textContent = `Showing ${{cards.length ? start + 1 : 0}}-${{end}} of ${{cards.length}} settled parlays · Page ${{parleyHistoryPage}} of ${{totalPages}}`;
+
+  const controls = [];
+  controls.push(`<button type="button" ${{parleyHistoryPage === 1 ? 'disabled' : ''}} onclick="renderParleyHistoryPage(${{parleyHistoryPage - 1}})">Prev</button>`);
+  for (let page = 1; page <= totalPages; page++) {{
+    controls.push(`<button type="button" class="${{page === parleyHistoryPage ? 'on' : ''}}" onclick="renderParleyHistoryPage(${{page}})">${{page}}</button>`);
+  }}
+  controls.push(`<button type="button" ${{parleyHistoryPage === totalPages ? 'disabled' : ''}} onclick="renderParleyHistoryPage(${{parleyHistoryPage + 1}})">Next</button>`);
+  buttons.innerHTML = controls.join('');
+}}
+
+function renderLowRiskHistoryPage(requestedPage) {{
+  const body = document.getElementById('low-risk-history-body');
+  const status = document.getElementById('low-risk-history-page-status');
+  const buttons = document.getElementById('low-risk-history-page-buttons');
+  if (!body || !status || !buttons) return;
+
+  const rows = Array.from(body.querySelectorAll('.low-risk-history-row'));
+  const totalPages = Math.max(1, Math.ceil(rows.length / LOW_RISK_HISTORY_PAGE_SIZE));
+  lowRiskHistoryPage = Math.min(Math.max(Number(requestedPage) || 1, 1), totalPages);
+  const start = (lowRiskHistoryPage - 1) * LOW_RISK_HISTORY_PAGE_SIZE;
+  const end = Math.min(start + LOW_RISK_HISTORY_PAGE_SIZE, rows.length);
+
+  rows.forEach((row, index) => {{
+    row.classList.toggle('hidden', index < start || index >= end);
+  }});
+  status.textContent = `Showing ${{rows.length ? start + 1 : 0}}-${{end}} of ${{rows.length}} Low Risk results · Page ${{lowRiskHistoryPage}} of ${{totalPages}}`;
+
+  const controls = [];
+  controls.push(`<button type="button" ${{lowRiskHistoryPage === 1 ? 'disabled' : ''}} onclick="renderLowRiskHistoryPage(${{lowRiskHistoryPage - 1}})">Prev</button>`);
+  for (let page = 1; page <= totalPages; page++) {{
+    controls.push(`<button type="button" class="${{page === lowRiskHistoryPage ? 'on' : ''}}" onclick="renderLowRiskHistoryPage(${{page}})">${{page}}</button>`);
+  }}
+  controls.push(`<button type="button" ${{lowRiskHistoryPage === totalPages ? 'disabled' : ''}} onclick="renderLowRiskHistoryPage(${{lowRiskHistoryPage + 1}})">Next</button>`);
+  buttons.innerHTML = controls.join('');
+}}
+
 ACTIVE_RANGES.forEach(updateRange);
+renderFixtureOddsPage(1);
+renderLowRiskHistoryPage(1);
+renderParleyHistoryPage(1);
 </script>
 </body>
 </html>

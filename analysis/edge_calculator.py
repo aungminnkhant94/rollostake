@@ -9,13 +9,14 @@ import re
 import sqlite3
 import sys
 from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.paths import DB_PATH, DATA_DIR
 from utils.match_resolver import parse_kickoff_utc
+from utils.player_news import injury_news
 
 @dataclass
 class Pick:
@@ -36,6 +37,7 @@ class Pick:
     reasoning: str = ''
     risk_note: str = ''
     status: str = 'pending'
+    missing_context: Tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,7 @@ class RangeConfig:
     max_odds: float
     max_picks: int
     min_edge: float
+    min_model_prob: float = 0.0
     market_min_picks: Dict[str, int] = field(default_factory=dict)
     market_max_picks: Dict[str, int] = field(default_factory=dict)
     max_picks_per_match: int = 2
@@ -82,6 +85,12 @@ class EdgeCalculator:
     MAX_KELLY_PCT = 0.05   # Max 5% of bankroll per bet (was $500 fixed)
     MIN_KELLY_STAKE = 50.0
     DC_RHO = -0.13
+    RELIABILITY_MIN_DECISIONS = 10
+    RELIABILITY_PRIOR_WINS = 2.0
+    RELIABILITY_PRIOR_LOSSES = 2.0
+    RELIABILITY_SHRINKAGE = 10.0
+    RELIABILITY_MIN_GAP = 0.05
+    RELIABILITY_MAX_PENALTY = 0.08
 
     DEFAULT_RANGES = {
         'C': RangeConfig('C', 'High Risk', 10000.0, 200.0, 2.50, 5.00, 12, 0.05),
@@ -109,6 +118,7 @@ class EdgeCalculator:
                 max_odds=float(raw.get('max_odds', 999.0)),
                 max_picks=int(raw.get('max_picks', settings.get('max_picks', 12))),
                 min_edge=float(raw.get('min_edge', settings.get('min_edge', 0.05))),
+                min_model_prob=float(raw.get('min_model_prob', 0.0)),
                 market_min_picks={
                     str(market).upper(): int(count)
                     for market, count in raw.get('market_min_picks', {}).items()
@@ -152,6 +162,7 @@ class EdgeCalculator:
         flat_stake: float = 200.0,
         range_configs: Dict[str, RangeConfig] = None,
         bookmaker: str = None,
+        context_gate: Dict = None,
     ):
         self.bankroll = bankroll
         self.staking_mode = (staking_mode or ('kelly' if use_kelly else 'flat')).lower()
@@ -161,6 +172,16 @@ class EdgeCalculator:
         self.range_configs = range_configs or self.DEFAULT_RANGES
         self.bookmaker = bookmaker
         self._context_cache = {}
+        gate = context_gate or {}
+        self.context_gate_enabled = bool(gate.get("enabled", True))
+        self.context_gate_ranges = {
+            str(code).upper() for code in gate.get("blocked_ranges", ("C", "D"))
+        }
+        required = gate.get("required_layers", {}) or {}
+        self.context_default_layers = tuple(int(value) for value in required.get("default", (1, 2, 7, 10)))
+        self.context_goal_layers = tuple(int(value) for value in required.get("goal_markets", (1, 2, 3, 7, 10)))
+        self.context_blocks: List[Dict] = []
+        self._context_block_keys = set()
         
     def kelly_stake(self, edge_pct: float, odds: float, model_prob: float) -> float:
         """
@@ -353,7 +374,8 @@ class EdgeCalculator:
                     stake=stake,
                     quality=quality,
                     reasoning=self._build_reasoning(row, model_prob, book_prob, edge_pct, context_notes),
-                    risk_note=self._build_risk_note(row)
+                    risk_note=self._build_risk_note(row),
+                    missing_context=self._missing_required_context(row['match_id'], row['market']),
                 )
                 
                 picks.append(pick)
@@ -368,6 +390,7 @@ class EdgeCalculator:
         all_candidates = self.generate_picks(league=league, min_edge=0.0)
         learned_adjustments = self._learned_performance_adjustments()
         loss_traps = self._loss_trap_segments()
+        reliability = self._settled_market_reliability()
         selected = []
         exposure = set()
 
@@ -378,10 +401,16 @@ class EdgeCalculator:
             max_budgeted_picks = min(config.max_picks, bank_state["stake_slots"])
             match_counts = {}
             family_counts = {}
+            calibrated_candidates = [
+                self._apply_settled_reliability(pick, code, reliability)
+                for pick in all_candidates
+            ]
             range_candidates = [
-                p for p in all_candidates
+                p for p in calibrated_candidates
                 if config.min_odds <= p.odds <= config.max_odds
                 and p.edge_pct / 100 >= config.min_edge
+                and p.model_prob >= config.min_model_prob
+                and p.quality != 'SKIP'
                 and self._range_filter_match(p, config)
             ]
             range_candidates.sort(
@@ -396,10 +425,6 @@ class EdgeCalculator:
                 p for p in range_candidates
                 if not self._is_hard_loss_trap(p, code, loss_traps)
                 and not self._matches_loss_trap(p, code, loss_traps)
-            ]
-            fallback_candidates = [
-                p for p in range_candidates
-                if not self._is_hard_loss_trap(p, code, loss_traps)
             ]
 
             count = 0
@@ -451,12 +476,6 @@ class EdgeCalculator:
                 if add_pick(pick):
                     continue
 
-            for pick in fallback_candidates:
-                if count >= max_budgeted_picks:
-                    break
-                if add_pick(pick):
-                    continue
-
         self._annotate_correlated_exposure(selected)
         def kickoff_sort_value(pick: Pick) -> str:
             kickoff_utc = parse_kickoff_utc(pick.kickoff)
@@ -481,6 +500,7 @@ class EdgeCalculator:
             + code_adjustments.get(("family", self._exposure_family(pick)), 0.0)
             + code_adjustments.get(("selection_type", self._selection_type(pick)), 0.0)
             + code_adjustments.get(("line", self._line_segment_from_values(pick.market, pick.selection)), 0.0)
+            + code_adjustments.get(("market_line", self._market_line_segment_from_values(pick.market, pick.selection)), 0.0)
             + code_adjustments.get(("odds_bucket", self._odds_bucket(pick.odds)), 0.0)
             + self._market_structure_prior(pick, code)
             + self._external_card_prior(pick, code)
@@ -539,6 +559,7 @@ class EdgeCalculator:
                 "family": 0.12,
                 "selection_type": 0.08,
                 "line": 0.12,
+                "market_line": 0.14,
                 "odds_bucket": 0.04,
             }
             min_decisions = {
@@ -547,6 +568,7 @@ class EdgeCalculator:
                 "family": 3,
                 "selection_type": 3,
                 "line": 2,
+                "market_line": 3,
                 "odds_bucket": 4,
             }
             for key, segment_rows in segments.items():
@@ -572,12 +594,122 @@ class EdgeCalculator:
 
         return adjustments
 
+    @classmethod
+    def _market_reliability_from_rows(cls, rows: List[Dict]) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Learn downside-only probability penalties from settled production picks."""
+        grouped: Dict[Tuple[str, str], List[Dict]] = {}
+        for row in rows:
+            code = str(row.get("range_code") or "").upper()
+            market = str(row.get("market") or "").upper()
+            result = str(row.get("result") or "").lower()
+            model_prob = row.get("model_prob")
+            if not code or not market or result not in {"win", "loss"} or model_prob is None:
+                continue
+            grouped.setdefault((code, market), []).append(row)
+
+        reliability: Dict[str, Dict[str, Dict[str, float]]] = {}
+        for (code, market), items in grouped.items():
+            decisions = len(items)
+            if decisions < cls.RELIABILITY_MIN_DECISIONS:
+                continue
+            wins = sum(1 for item in items if str(item.get("result")).lower() == "win")
+            losses = decisions - wins
+            staked = sum(float(item.get("stake") or 0) for item in items)
+            pnl = sum(float(item.get("pnl") or 0) for item in items)
+            roi = pnl / staked if staked else 0.0
+            mean_prediction = sum(float(item["model_prob"]) for item in items) / decisions
+            posterior_rate = (
+                wins + cls.RELIABILITY_PRIOR_WINS
+            ) / (
+                decisions + cls.RELIABILITY_PRIOR_WINS + cls.RELIABILITY_PRIOR_LOSSES
+            )
+            calibration_gap = mean_prediction - posterior_rate
+            if roi >= 0 or calibration_gap < cls.RELIABILITY_MIN_GAP:
+                continue
+            penalty = min(
+                cls.RELIABILITY_MAX_PENALTY,
+                calibration_gap * decisions / (decisions + cls.RELIABILITY_SHRINKAGE),
+            )
+            reliability.setdefault(code, {})[market] = {
+                "penalty": penalty,
+                "decisions": decisions,
+                "wins": wins,
+                "losses": losses,
+                "roi": roi,
+                "mean_prediction": mean_prediction,
+                "posterior_rate": posterior_rate,
+            }
+        return reliability
+
+    def _settled_market_reliability(self) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Load calibration evidence only where the original probability is known."""
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT COALESCE(r.range_code, p.range_code) AS range_code,
+                       p.market, p.model_prob, r.result,
+                       COALESCE(r.stake, 0) AS stake,
+                       COALESCE(r.pnl, 0) AS pnl
+                FROM results r
+                JOIN picks p ON p.id = r.pick_id
+                WHERE r.result IN ('win', 'loss')
+                  AND p.model_prob IS NOT NULL
+                """
+            )
+        ]
+        conn.close()
+        return self._market_reliability_from_rows(rows)
+
+    def _apply_settled_reliability(
+        self,
+        pick: Pick,
+        code: str,
+        reliability: Dict[str, Dict[str, Dict[str, float]]],
+    ) -> Pick:
+        """Reprice a candidate conservatively before official threshold checks."""
+        info = reliability.get(str(code).upper(), {}).get(str(pick.market).upper())
+        if not info or float(info.get("penalty") or 0) <= 0:
+            return replace(pick)
+
+        raw_probability = float(pick.model_prob)
+        penalty = float(info["penalty"])
+        calibrated_probability = max(0.01, min(0.99, raw_probability - penalty))
+        edge, book_probability = self.calculate_edge(calibrated_probability, pick.odds)
+        quality = self.classify_pick(edge)
+        edge_display = edge * 100
+        calibration_sentence = (
+            f"Settled reliability calibration lowers the {pick.market.upper()} probability "
+            f"from {raw_probability:.1%} to {calibrated_probability:.1%} before selection "
+            f"({int(info['wins'])}W-{int(info['losses'])}L across "
+            f"{int(info['decisions'])} recorded-probability decisions). "
+            f"Against {book_probability:.1%} book implied, the calibrated edge is "
+            f"{edge_display:+.1f}%."
+        )
+        reasoning = re.sub(
+            r"^Model prices this at .*?edge\.\s*",
+            calibration_sentence + " ",
+            pick.reasoning or "",
+            count=1,
+        ).strip()
+        if not reasoning:
+            reasoning = calibration_sentence
+        return replace(
+            pick,
+            model_prob=round(calibrated_probability, 3),
+            book_prob=book_probability,
+            edge_pct=round(edge_display, 1),
+            quality=quality,
+            reasoning=reasoning,
+        )
+
     def _loss_trap_segments(self) -> Dict[str, set]:
         """Segments that repeatedly lost inside the same risk band.
 
-        These are skipped first, but can still be used as a last resort if the
-        card cannot otherwise fill. That keeps the pick count stable while
-        stopping repeated bad patterns from leading the slate.
+        These are excluded from official selection. Card size is a ceiling,
+        so a known weak segment is never reintroduced merely to fill slots.
         """
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -609,6 +741,7 @@ class EdgeCalculator:
             "family": 2,
             "selection_type": 3,
             "line": 2,
+            "market_line": 3,
             "odds_bucket": 4,
         }
         for code, items in by_range.items():
@@ -671,6 +804,7 @@ class EdgeCalculator:
             ("family", self._exposure_family_from_values(market, selection, home_team, away_team)),
             ("selection_type", self._selection_type_from_values(market, selection, home_team, away_team)),
             ("line", self._line_segment_from_values(market, selection)),
+            ("market_line", self._market_line_segment_from_values(market, selection)),
             ("odds_bucket", self._odds_bucket(odds)),
         )
 
@@ -694,7 +828,26 @@ class EdgeCalculator:
         market = (pick.market or "").upper()
         side = self._selection_type(pick)
         line_segment = self._line_segment_from_values(pick.market, pick.selection)
+        market_line_segment = self._market_line_segment_from_values(pick.market, pick.selection)
         trap_keys = traps.get(code, set())
+
+        supports, downgrades = self._context_signal_counts(pick.reasoning)
+        if (
+            code == "D"
+            and market in {"OU", "TT", "BTTS"}
+            and downgrades >= 2
+            and downgrades > supports
+        ):
+            return True
+
+        if (
+            code == "D"
+            and market == "TT"
+            and side == "under"
+            and line_segment == "goal-line-1.5"
+            and ("market_line", market_line_segment) in trap_keys
+        ):
+            return True
 
         if code == "C":
             if market == "OU" and (
@@ -710,7 +863,6 @@ class EdgeCalculator:
                 if line is not None and line <= -1.5:
                     return True
             if market == "1X2":
-                supports, downgrades = self._context_signal_counts(pick.reasoning)
                 if side == "away" and downgrades >= supports:
                     return True
 
@@ -897,6 +1049,11 @@ class EdgeCalculator:
             return f"ah-{match.group(1)}" if match else ""
         return market
 
+    def _market_line_segment_from_values(self, market: str, selection: str) -> str:
+        market = str(market or "").upper()
+        line = self._line_segment_from_values(market, selection)
+        return f"{market}:{line}" if market and line else ""
+
     def _handicap_line(self, selection: str) -> Optional[float]:
         if re.search(r'\bDNB\b', selection or "", re.IGNORECASE):
             return 0.0
@@ -929,11 +1086,87 @@ class EdgeCalculator:
         )
 
     def _range_filter_match(self, pick: Pick, config: RangeConfig) -> bool:
+        if (
+            self.context_gate_enabled
+            and config.code.upper() in self.context_gate_ranges
+            and pick.missing_context
+        ):
+            key = (config.code.upper(), pick.match_id, pick.market, pick.selection)
+            if key not in self._context_block_keys:
+                self._context_block_keys.add(key)
+                self.context_blocks.append(
+                    {
+                        "range_code": config.code.upper(),
+                        "match_id": pick.match_id,
+                        "match": f"{pick.home_team} vs {pick.away_team}",
+                        "market": pick.market,
+                        "selection": pick.selection,
+                        "missing": list(pick.missing_context),
+                    }
+                )
+            return False
         if config.allowed_markets and pick.market.upper() not in config.allowed_markets:
             return False
         if config.allowed_selection_types and self._selection_type(pick) not in config.allowed_selection_types:
             return False
         return True
+
+    def _missing_required_context(self, match_id: str, market: str) -> Tuple[str, ...]:
+        goal_market = str(market or "").upper() in ("OU", "TT", "BTTS")
+        required = self.context_goal_layers if goal_market else self.context_default_layers
+        cache_key = ("required_context", match_id, required)
+        cached = self._context_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        expected_names = {
+            1: "Rolling blend",
+            2: "Elo SoS",
+            3: "Finishing quality",
+            4: "Motivation",
+            5: "Manager bounce",
+            6: "Derby",
+            7: "Injuries",
+            8: "Euro fatigue",
+            9: "Cup fatigue",
+            10: "Rest days",
+            11: "Rotation",
+            12: "Luck regression",
+            13: "Lambda cap",
+            14: "Dixon-Coles rho",
+        }
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("PRAGMA table_info(prediction_adjustment_layers)")
+        columns = {row[1] for row in c.fetchall()}
+        if "evidence_state" not in columns:
+            conn.close()
+            missing = tuple(f"L{layer_no} {expected_names.get(layer_no, 'layer')} (audit unavailable)" for layer_no in required)
+            self._context_cache[cache_key] = missing
+            return missing
+
+        placeholders = ",".join("?" for _ in required)
+        c.execute(
+            f"""
+            SELECT layer_no, layer_name, COALESCE(evidence_state, 'UNKNOWN') AS evidence_state
+            FROM prediction_adjustment_layers
+            WHERE match_id = ? AND layer_no IN ({placeholders})
+            """,
+            (match_id, *required),
+        )
+        rows = {int(row["layer_no"]): dict(row) for row in c.fetchall()}
+        conn.close()
+        missing = []
+        for layer_no in required:
+            row = rows.get(layer_no)
+            state = str(row.get("evidence_state") if row else "UNKNOWN").upper()
+            if state in ("MISSING_DATA", "UNKNOWN", ""):
+                layer_name = str(row.get("layer_name") if row else expected_names.get(layer_no, "layer"))
+                missing.append(f"L{layer_no} {layer_name} ({state or 'UNKNOWN'})")
+        result = tuple(missing)
+        self._context_cache[cache_key] = result
+        return result
     
     def _get_model_prob(self, row) -> Optional[float]:
         """
@@ -1545,6 +1778,7 @@ class EdgeCalculator:
             FROM matches
             WHERE match_id != ?
               AND (home_team = ? OR away_team = ?)
+              AND status IN ('scheduled', 'completed')
             """,
             (kickoff, kickoff, kickoff, kickoff, match_id, team, team),
         )
@@ -1573,14 +1807,13 @@ class EdgeCalculator:
 
         c.execute(
             """
-            SELECT player, team, status, reason, source, confidence
+            SELECT *
             FROM team_news
             WHERE team = ?
-              AND LOWER(status) IN ('injured', 'injury', 'suspended', 'out', 'doubtful')
             """,
             (team,),
         )
-        rows = [dict(row) for row in c.fetchall()]
+        rows = injury_news([dict(row) for row in c.fetchall()])
         conn.close()
         self._context_cache[cache_key] = rows
         return rows
@@ -1655,9 +1888,10 @@ class EdgeCalculator:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
-        self._clear_replaceable_pending_picks(c)
-        
+        saved = []
         for pick in top_picks:
+            if self._has_pending_pick_for_match(c, pick.match_id):
+                continue
             c.execute('''
                 INSERT INTO picks 
                 (match_id, selection, market, model_prob, book_prob, edge_pct, 
@@ -1669,10 +1903,11 @@ class EdgeCalculator:
                 pick.odds, pick.stake, pick.range_code, pick.quality,
                 pick.reasoning, pick.risk_note, pick.status
             ))
+            saved.append(pick)
         
         conn.commit()
         conn.close()
-        print(f"Saved {len(top_picks)} unique picks (cleared old, top 12 by edge)")
+        print(f"Saved {len(saved)} new unique picks; preserved existing pending picks")
         
         return top_picks
 
@@ -1680,9 +1915,10 @@ class EdgeCalculator:
         """Save risk-band picks without bankroll scaling."""
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        self._clear_replaceable_pending_picks(c)
-
+        saved = []
         for pick in picks:
+            if self._has_pending_pick_for_match(c, pick.match_id):
+                continue
             c.execute('''
                 INSERT INTO picks
                 (match_id, selection, market, model_prob, book_prob, edge_pct,
@@ -1694,35 +1930,20 @@ class EdgeCalculator:
                 pick.odds, pick.stake, pick.range_code, pick.quality,
                 pick.reasoning, pick.risk_note, pick.status
             ))
+            saved.append(pick)
 
         conn.commit()
         conn.close()
-        print(f"Saved {len(picks)} risk-band picks")
+        print(f"Saved {len(saved)} new risk-band picks; preserved existing pending picks")
         return picks
 
-    def _clear_replaceable_pending_picks(self, c) -> None:
-        """Clear only pending picks for matches that have not kicked off yet."""
-        now_utc = datetime.now(timezone.utc)
-        c.execute(
-            """
-            SELECT p.id, m.kickoff
-            FROM picks p
-            JOIN matches m ON p.match_id = m.match_id
-            WHERE p.status = 'pending'
-              AND m.status = 'scheduled'
-            """
-        )
-        replaceable_ids = []
-        for pick_id, kickoff in c.fetchall():
-            kickoff_utc = parse_kickoff_utc(kickoff)
-            if kickoff_utc is None or kickoff_utc >= now_utc:
-                replaceable_ids.append(pick_id)
-        if not replaceable_ids:
-            return
-        c.execute(
-            f"DELETE FROM picks WHERE id IN ({','.join('?' for _ in replaceable_ids)})",
-            replaceable_ids,
-        )
+    @staticmethod
+    def _has_pending_pick_for_match(c, match_id: str) -> bool:
+        """Keep the first active recommendation for a match until settlement."""
+        return c.execute(
+            "SELECT 1 FROM picks WHERE match_id = ? AND status = 'pending' LIMIT 1",
+            (match_id,),
+        ).fetchone() is not None
 
 if __name__ == '__main__':
     calc = EdgeCalculator(use_kelly=True)

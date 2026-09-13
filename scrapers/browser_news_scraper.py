@@ -10,18 +10,20 @@ Requires the Kimi WebBridge daemon running at http://127.0.0.1:10086.
 """
 
 import json
+import re
 import sqlite3
 import sys
 import subprocess
 import time
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.paths import DB_PATH, DATA_DIR
 from utils.team_normalizer import normalize_team_name
+from utils.player_news import reconcile_news, news_time
 
 WEBBRIDGE_URL = "http://127.0.0.1:10086/command"
 
@@ -170,6 +172,36 @@ class BetinfScraper:
     def __init__(self, leagues: Optional[List[str]] = None):
         self.leagues = leagues or list(self.LEAGUE_URLS.keys())
 
+    @staticmethod
+    def parse_html(document: str) -> List[Dict]:
+        """Accept current id-based team headings and legacy exph headings."""
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(document, 'html.parser')
+        items = []
+        positions = {'D':'defender','M':'midfielder','F':'forward','G':'goalkeeper'}
+        for heading in soup.select('h3[id], h3.exph'):
+            sibling = heading.find_next_sibling()
+            if sibling is None:
+                continue
+            table = sibling if sibling.name == 'table' else sibling.find('table')
+            if table is None:
+                continue
+            for tr in table.find_all('tr'):
+                cells = [td.get_text(' ', strip=True) for td in tr.find_all('td')]
+                if len(cells) < 6:
+                    continue
+                player = re.sub(r'\s*\([^)]+\)', '', cells[1]).strip()
+                team = normalize_team_name(heading.get_text(' ', strip=True))
+                if not player or not team:
+                    continue
+                position = re.search(r'\(([^)]+)\)', cells[1])
+                position = positions.get(position.group(1), '') if position else ''
+                status = {'s':'suspended','?':'doubtful','?-':'doubtful','?+':'returning'}.get(cells[5], 'injured')
+                items.append(dict(player=player,team=team,status=status,
+                                  reason='; '.join(v for v in [cells[4],position] if v),
+                                  source='betinf',confidence='high',return_date=''))
+        return items
+
     def _navigate(self, url: str, session: str) -> bool:
         resp = _wb_request("navigate", {"url": url, "newTab": True}, session)
         if not resp.get("ok"):
@@ -178,11 +210,26 @@ class BetinfScraper:
         time.sleep(2.5)
         return True
 
+    def _fetch_http(self, url: str) -> str:
+        """Fetch the public injury page when the browser extension is unavailable."""
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/140.0 Safari/537.36"
+                )
+            },
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+
     def _extract(self, session: str, league: str) -> List[Dict]:
         js = """
         (() => {
             const results = [];
-            document.querySelectorAll("h3.exph").forEach(h3 => {
+            document.querySelectorAll("h3.exph, h3[id]").forEach(h3 => {
                 const team = h3.textContent.trim();
                 let next = h3.nextElementSibling;
                 if (!next) return;
@@ -246,6 +293,7 @@ class BetinfScraper:
 
     def fetch(self) -> List[Dict]:
         all_items = []
+        failed_leagues = []
         for league in self.leagues:
             url = self.LEAGUE_URLS.get(league)
             if not url:
@@ -253,12 +301,25 @@ class BetinfScraper:
             session = f"rollo-news-{league.lower()}"
             print(f"[Betinf {league}] Opening browser tab...")
             if not self._navigate(url, session):
-                continue
-            items = self._extract(session, league)
+                print(f"[Betinf {league}] Browser unavailable; using direct public page...")
+                try:
+                    items = self.parse_html(self._fetch_http(url))
+                except Exception as exc:
+                    print(f"[Betinf {league}] Direct fetch failed: {exc}")
+                    failed_leagues.append(league)
+                    continue
+            else:
+                items = self._extract(session, league)
+                # close tab to avoid piling up
+                _wb_request("close_tab", {}, session)
             print(f"[Betinf {league}] Extracted {len(items)} items")
+            if not items:
+                failed_leagues.append(league)
             all_items.extend(items)
-            # close tab to avoid piling up
-            _wb_request("close_tab", {}, session)
+        if failed_leagues:
+            raise RuntimeError(
+                "Betinf refresh incomplete for: " + ", ".join(failed_leagues)
+            )
         return all_items
 
 
@@ -294,6 +355,8 @@ class ManualJsonSource:
                 "source": item.get("source", "manual"),
                 "confidence": item.get("confidence", "medium"),
                 "return_date": item.get("return_date", ""),
+                # Re-reading an old manual file must not refresh its evidence age.
+                "observed_at": item.get("observed_at") or news_time(item).isoformat(),
             })
         print(f"[Manual JSON] Loaded {len(cleaned)} items from {self.path}")
         return cleaned
@@ -321,6 +384,9 @@ class TeamNewsDB:
                 fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        columns = {row[1] for row in c.execute('PRAGMA table_info(team_news)')}
+        if 'observed_at' not in columns:
+            c.execute('ALTER TABLE team_news ADD COLUMN observed_at TEXT')
         conn.commit()
         conn.close()
 
@@ -337,30 +403,41 @@ class TeamNewsDB:
         if deleted:
             print(f"[DB] Cleared {deleted} stale news items")
 
-    def save(self, items: List[Dict]):
+    def save(self, items: List[Dict], replace_current: bool = False):
         self._ensure_table()
         if not items:
             return 0
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         inserted = 0
-        for item in items:
-            c.execute("""
-                INSERT INTO team_news (player, team, status, reason, source, confidence, return_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                item.get("player", ""),
-                item["team"],
-                item.get("status", "injured"),
-                item.get("reason", ""),
-                item.get("source", "unknown"),
-                item.get("confidence", "medium"),
-                item.get("return_date", ""),
-            ))
-            inserted += 1
-        conn.commit()
-        conn.close()
-        print(f"[DB] Saved {inserted} news items")
+        try:
+            c.execute("BEGIN")
+            if replace_current:
+                c.execute("DELETE FROM team_news")
+            for item in reconcile_news(items):
+                c.execute("""
+                    INSERT INTO team_news (player, team, status, reason, source, confidence, return_date, observed_at, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+                """, (
+                    item.get("player", ""),
+                    item["team"],
+                    item.get("status", "injured"),
+                    item.get("reason", ""),
+                    item.get("source", "unknown"),
+                    item.get("confidence", "medium"),
+                    item.get("return_date", ""),
+                    item.get("observed_at"),
+                    item.get("fetched_at"),
+                ))
+                inserted += 1
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        action = "Replaced current feed with" if replace_current else "Saved"
+        print(f"[DB] {action} {inserted} news items")
         return inserted
 
     def summary(self) -> Dict[str, int]:
@@ -397,6 +474,8 @@ def run_browser_scraper(
         if source == "premier_injuries":
             scraper = PremierInjuriesScraper()
             items = scraper.fetch()
+            if not items:
+                raise RuntimeError("Premier Injuries refresh returned no rows")
             all_items.extend(items)
         elif source == "betinf":
             scraper = BetinfScraper()
@@ -413,20 +492,10 @@ def run_browser_scraper(
         print("[WARN] No team news items fetched")
         return []
 
-    # Deduplicate by (player, team) — prefer higher confidence, then newer source
-    seen: Dict[Tuple[str, str], Dict] = {}
+    # Browser observations are current; manual evidence keeps its original age.
     for item in all_items:
-        key = (item.get("player", "").lower(), item["team"].lower())
-        existing = seen.get(key)
-        if existing is None:
-            seen[key] = item
-            continue
-        # Prefer high confidence
-        conf_order = {"high": 3, "medium": 2, "low": 1}
-        if conf_order.get(item.get("confidence", ""), 0) > conf_order.get(existing.get("confidence", ""), 0):
-            seen[key] = item
-
-    deduped = list(seen.values())
+        item.setdefault('fetched_at', datetime.now(timezone.utc).isoformat())
+    deduped = reconcile_news(all_items)
     print(f"[AGG] {len(all_items)} raw -> {len(deduped)} deduplicated")
 
     if dry_run:
@@ -439,8 +508,9 @@ def run_browser_scraper(
 
     db = TeamNewsDB()
     if clear_stale:
-        db.clear_stale(days=7)
-    db.save(deduped)
+        db.save(deduped, replace_current=True)
+    else:
+        db.save(deduped)
     summary = db.summary()
     if summary:
         print("[DB] Teams with news:")

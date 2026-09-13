@@ -305,7 +305,8 @@ class DixonColesModel:
         btts_matrix = probs.copy()
         btts_matrix[0, :] = 0  # No home goals
         btts_matrix[:, 0] = 0  # No away goals
-        prob_btts = btts_matrix.sum() / (1 - probs[0, 0])  # Conditional on not 0-0
+        # BTTS Yes loses at 0-0; price it over the full score distribution.
+        prob_btts = btts_matrix.sum()
         
         return {
             'lambda_h': round(lambda_h, 3),

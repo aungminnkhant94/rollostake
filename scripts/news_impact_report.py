@@ -61,9 +61,17 @@ def main():
             p.edge_pct,
             p.quality,
             p.range_code,
-            p.reasoning
+            p.reasoning,
+            COALESCE(l7.active, 0) AS news_active,
+            l7.note AS news_layer_note,
+            l7.home_before AS news_home_before,
+            l7.away_before AS news_away_before,
+            l7.home_after AS news_home_after,
+            l7.away_after AS news_away_after
         FROM picks p
         JOIN matches m ON p.match_id = m.match_id
+        LEFT JOIN prediction_adjustment_layers l7
+          ON l7.match_id = p.match_id AND l7.layer_no = 7
         WHERE p.status = 'pending'
         ORDER BY p.edge_pct DESC
     """)
@@ -79,7 +87,7 @@ def main():
     without_news = []
     for row in rows:
         notes = parse_adjustment_notes(row["reasoning"] or "")
-        if notes["news"]:
+        if row["news_active"]:
             with_news.append((row, notes))
         else:
             without_news.append((row, notes))
@@ -99,14 +107,12 @@ def main():
             match = f"{row['home_team']} vs {row['away_team']}"
             match = match[:34]
             sel = row["selection"][:19]
-            news_note = notes["news"]
-            # Estimate delta sign
-            delta_sign = ""
-            if "supports" in news_note:
-                delta_sign = "+"
-            elif "downgrades" in news_note:
-                delta_sign = "-"
-            print(f"{match:<35} {row['market']:<10} {sel:<20} {row['model_prob']*100:>5.1f}% {row['edge_pct']:>6.1f}% {delta_sign} {news_note}")
+            news_note = row["news_layer_note"] or "active Layer 7 adjustment"
+            delta = (
+                f"lambda H {row['news_home_before']:.3f}->{row['news_home_after']:.3f}, "
+                f"A {row['news_away_before']:.3f}->{row['news_away_after']:.3f}"
+            )
+            print(f"{match:<35} {row['market']:<10} {sel:<20} {row['model_prob']*100:>5.1f}% {row['edge_pct']:>6.1f}% {news_note}; {delta}")
 
     print("\n" + "-" * 90)
     print("Picks with NO news adjustment (table/H2H/schedule only):")

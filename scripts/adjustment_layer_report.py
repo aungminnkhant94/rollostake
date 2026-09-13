@@ -37,6 +37,7 @@ def main():
         SELECT m.match_id, m.home_team, m.away_team, m.league, m.kickoff,
                p.lambda_h, p.lambda_a,
                SUM(CASE WHEN l.active = 1 THEN 1 ELSE 0 END) AS active_layers,
+               SUM(CASE WHEN COALESCE(l.evidence_state, 'UNKNOWN') IN ('MISSING_DATA', 'UNKNOWN') THEN 1 ELSE 0 END) AS missing_layers,
                COUNT(l.id) AS total_layers
         FROM matches m
         JOIN predictions p ON m.match_id = p.match_id
@@ -62,15 +63,17 @@ def main():
         print(
             f"lambda_h={float(match['lambda_h'] or 0):.3f} "
             f"lambda_a={float(match['lambda_a'] or 0):.3f} | "
-            f"active layers {int(match['active_layers'] or 0)}/{int(match['total_layers'] or 0)}"
+            f"active layers {int(match['active_layers'] or 0)}/{int(match['total_layers'] or 0)} | "
+            f"missing/unknown {int(match['missing_layers'] or 0)}"
         )
         layer_where = "match_id = ?"
         layer_params = [match["match_id"]]
         if not args.all:
-            layer_where += " AND active = 1"
+            layer_where += " AND (active = 1 OR COALESCE(evidence_state, 'UNKNOWN') IN ('MISSING_DATA', 'UNKNOWN'))"
         c.execute(
             f"""
-            SELECT layer_no, layer_name, home_before, away_before, home_after, away_after, note, active
+            SELECT layer_no, layer_name, home_before, away_before, home_after, away_after,
+                   note, active, COALESCE(evidence_state, 'UNKNOWN') AS evidence_state
             FROM prediction_adjustment_layers
             WHERE {layer_where}
             ORDER BY layer_no
@@ -79,12 +82,13 @@ def main():
         )
         rows = c.fetchall()
         if not rows:
-            print("  No active material layer moves.")
+            print("  No active material moves or missing evidence.")
             continue
         for row in rows:
-            marker = "*" if row["active"] else "-"
+            state = row["evidence_state"]
+            marker = "!" if state in ("MISSING_DATA", "UNKNOWN") else ("*" if row["active"] else "-")
             print(
-                f"  {marker} L{row['layer_no']:02d} {row['layer_name']}: "
+                f"  {marker} L{row['layer_no']:02d} {row['layer_name']} [{state}]: "
                 f"H {float(row['home_before']):.3f}->{float(row['home_after']):.3f}, "
                 f"A {float(row['away_before']):.3f}->{float(row['away_after']):.3f} | "
                 f"{row['note']}"

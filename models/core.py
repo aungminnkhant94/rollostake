@@ -160,6 +160,56 @@ def init_db():
         )
     ''')
 
+    # Current post-transfer-window squad snapshot. Keep this separate from
+    # team_news: a registered player is context, not an injury or an automatic
+    # positive/negative model adjustment.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS squad_players (
+            id INTEGER PRIMARY KEY,
+            league TEXT NOT NULL,
+            team TEXT NOT NULL,
+            raw_team_name TEXT,
+            espn_team_id TEXT NOT NULL,
+            player_id TEXT NOT NULL,
+            player_name TEXT NOT NULL,
+            position TEXT,
+            position_abbr TEXT,
+            jersey TEXT,
+            player_status TEXT,
+            age INTEGER,
+            season TEXT,
+            source TEXT NOT NULL DEFAULT 'espn',
+            source_url TEXT,
+            fetched_at TEXT NOT NULL,
+            UNIQUE (league, team, player_id)
+        )
+    ''')
+
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS squad_depth (
+            id INTEGER PRIMARY KEY,
+            league TEXT NOT NULL,
+            team TEXT NOT NULL,
+            goalkeepers INTEGER NOT NULL DEFAULT 0,
+            defenders INTEGER NOT NULL DEFAULT 0,
+            midfielders INTEGER NOT NULL DEFAULT 0,
+            forwards INTEGER NOT NULL DEFAULT 0,
+            unknown_positions INTEGER NOT NULL DEFAULT 0,
+            total_players INTEGER NOT NULL DEFAULT 0,
+            active_players INTEGER NOT NULL DEFAULT 0,
+            season TEXT,
+            source TEXT NOT NULL DEFAULT 'espn',
+            source_url TEXT,
+            fetched_at TEXT NOT NULL,
+            UNIQUE (league, team)
+        )
+    ''')
+
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_squad_players_team_name
+        ON squad_players(team, player_name)
+    ''')
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS prediction_adjustment_layers (
             id INTEGER PRIMARY KEY,
@@ -172,6 +222,7 @@ def init_db():
             away_after REAL,
             note TEXT,
             active INTEGER DEFAULT 0,
+            evidence_state TEXT DEFAULT 'UNKNOWN',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )
@@ -231,6 +282,7 @@ def init_db():
     _add_column_if_missing(c, 'picks', 'settled_at', 'TIMESTAMP')
     _add_column_if_missing(c, 'bankroll', 'range_code', "TEXT DEFAULT 'D'")
     _add_column_if_missing(c, 'team_news', 'return_date', 'TEXT')
+    _add_column_if_missing(c, 'prediction_adjustment_layers', 'evidence_state', "TEXT DEFAULT 'UNKNOWN'")
 
     # Repeated pipeline runs should refresh the prediction for a fixture, not
     # accumulate duplicate rows that later multiply market candidates.

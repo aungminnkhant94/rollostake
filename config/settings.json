@@ -22,8 +22,8 @@
       "flat_stake": 10,
       "min_odds": 2.5,
       "max_odds": 5.0,
-      "max_picks": 12,
-      "min_edge": 0.05,
+      "max_picks": 8,
+      "min_edge": 0.10,
       "max_picks_per_match": 1,
       "max_family_per_match": 1,
       "market_min_picks": {},
@@ -37,8 +37,9 @@
       "flat_stake": 10,
       "min_odds": 1.7,
       "max_odds": 2.7,
-      "max_picks": 12,
-      "min_edge": 0.05,
+      "max_picks": 10,
+      "min_edge": 0.10,
+      "min_model_prob": 0.55,
       "max_picks_per_match": 1,
       "max_family_per_match": 1,
       "market_min_picks": {},
@@ -59,6 +60,14 @@
     "dixon_coles_rho": -0.13,
     "manual_context_file": "data/team_context.json",
     "derby_pairs": []
+  },
+  "context_gate": {
+    "enabled": true,
+    "blocked_ranges": ["C", "D"],
+    "required_layers": {
+      "default": [1, 2, 7, 10],
+      "goal_markets": [1, 2, 3, 7, 10]
+    }
   },
   "dashboard_auto_open": false
 }

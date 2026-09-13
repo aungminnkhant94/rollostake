@@ -9,6 +9,7 @@ Markets scraped:
 - moneyline              -> 1X2
 - totals                 -> OU (Over/Under goals)
 - both_teams_to_score    -> BTTS
+- soccer_team_totals     -> TT (Team totals)
 - spreads                -> AH (Asian Handicap)
 
 Extra markets can be exported/imported with --include-extra-markets, but the
@@ -24,10 +25,14 @@ Usage:
 import argparse
 import csv
 import json
+import math
 import re
 import sqlite3
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
+import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -46,7 +51,10 @@ TEAM_ALIASES = {
 }
 
 SUPPORTED_LEAGUES = {"EPL", "L1", "Bundesliga", "SerieA", "LaLiga"}
-MODEL_MARKETS = {"1X2", "OU", "BTTS", "AH"}
+MODEL_MARKETS = {"1X2", "OU", "BTTS", "TT", "AH"}
+GAMMA_EVENT_BY_SLUG = "https://gamma-api.polymarket.com/events/slug/{slug}"
+GAMMA_EVENTS = "https://gamma-api.polymarket.com/events"
+GAMMA_SPORTS = "https://gamma-api.polymarket.com/sports"
 
 URL_LEAGUE_MAP = {
     "epl-": "EPL",
@@ -75,6 +83,8 @@ URL_LEAGUE_MAP = {
     "col-": "Colombia",
 }
 
+CORE_SPORT_CODES = {"epl", "lal", "sea", "bun", "fl1"}
+
 
 def fetch_html(url: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -82,24 +92,80 @@ def fetch_html(url: str) -> str:
         return response.read().decode("utf-8", "ignore")
 
 
+def fetch_event_by_slug(slug: str, missing_ok: bool = False) -> dict:
+    """Fetch one Polymarket event and its markets from the official Gamma API."""
+    url = GAMMA_EVENT_BY_SLUG.format(slug=slug)
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8", "ignore"))
+    except urllib.error.HTTPError as exc:
+        if missing_ok and exc.code == 404:
+            return {}
+        raise
+
+
+def fetch_json(url: str):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8", "ignore"))
+
+
+def _is_parent_match_slug(slug: str) -> bool:
+    """Parent soccer events end in the match date; child market events do not."""
+    return bool(re.search(r"\d{4}-\d{2}-\d{2}$", str(slug or "")))
+
+
+def merge_market_objects(*groups: list[dict]) -> list[dict]:
+    """Merge market collections while preserving one row per market id/slug."""
+    merged = []
+    seen = set()
+    for group in groups:
+        for obj in group or []:
+            key = obj.get("id") or obj.get("slug")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            merged.append(obj)
+    return merged
+
+
+def _html_variants(html: str):
+    yield html
+    try:
+        # Next.js JSON includes valid JSON escapes such as `\/`, which the
+        # whole-document unicode decoder warns about even though this fallback
+        # is needed to expose embedded market objects.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            decoded = html.encode("utf-8").decode("unicode_escape", "ignore")
+    except Exception:
+        return
+    if decoded != html:
+        yield decoded
+
+
 def market_objects(html: str) -> list[dict]:
     objects = []
     seen = set()
-    for match in re.finditer(r'"slug":"([^"]+)"', html):
-        start = html.rfind('{"id":"', 0, match.start())
-        end = html.find(',"events":[', match.end())
-        if start < 0 or end < 0:
-            continue
-        raw = html[start:end] + "}"
-        try:
-            obj = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        slug = obj.get("slug")
-        if slug in seen:
-            continue
-        seen.add(slug)
-        objects.append(obj)
+    for text in _html_variants(html):
+        for match in re.finditer(r'"slug":"([^"]+)"', text):
+            start = text.rfind('{"id":"', 0, match.start())
+            end = text.find(',"events":[', match.end())
+            if start < 0 or end < 0:
+                continue
+            raw = text[start:end] + "}"
+            try:
+                obj = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            slug = obj.get("slug")
+            if slug in seen:
+                continue
+            seen.add(slug)
+            objects.append(obj)
+        if objects:
+            break
     return objects
 
 
@@ -109,24 +175,57 @@ def discover_matches(days_ahead: int = 7) -> list[dict]:
     html = fetch_html(url)
 
     all_slugs = set()
+    event_titles = {}
+    for text in _html_variants(html):
+        # Pattern 1: /event/slug
+        event_slugs = re.findall(r'/event/([a-z0-9-]+\d{4}-\d{2}-\d{2}[a-z0-9-]*)', text)
+        all_slugs.update(event_slugs)
 
-    # Pattern 1: /event/slug
-    event_slugs = re.findall(r'/event/([a-z0-9-]+\d{4}-\d{2}-\d{2}[a-z0-9-]*)', html)
-    all_slugs.update(event_slugs)
+        # Pattern 2: /sports/league/slug
+        sports_slugs = re.findall(r'/sports/[a-z0-9-]+/([a-z0-9-]+\d{4}-\d{2}-\d{2}[a-z0-9-]*)', text)
+        all_slugs.update(sports_slugs)
 
-    # Pattern 2: /sports/league/slug
-    sports_slugs = re.findall(r'/sports/[a-z-]+/([a-z0-9-]+\d{4}-\d{2}-\d{2}[a-z0-9-]*)', html)
-    all_slugs.update(sports_slugs)
+        # Pattern 3: Next.js data maps sometimes expose event slugs only as JSON
+        # keys, e.g. "epl-bri-mun-2026-05-24":["472498", ...].
+        keyed_slugs = re.findall(r'"([a-z0-9-]+\d{4}-\d{2}-\d{2}[a-z0-9-]*)"\s*:\s*\[', text)
+        all_slugs.update(keyed_slugs)
 
-    skip_suffixes = ("more-markets", "exact-score", "halftime-result", "total-corners", "player-props", "corners")
-    clean_slugs = []
-    for slug in all_slugs:
-        if any(suffix in slug for suffix in skip_suffixes):
-            continue
-        clean_slugs.append(slug)
-
+    # The rendered soccer page can expose only the currently selected date.
+    # Query the official Gamma series for each core league so future matchdays
+    # are discovered even when they are absent from the page HTML.
     today = datetime.now(timezone.utc).date()
     cutoff = today + timedelta(days=days_ahead)
+    sports = fetch_json(GAMMA_SPORTS)
+    series_ids = {
+        str(item.get("sport")): str(item.get("series"))
+        for item in sports
+        if item.get("sport") in CORE_SPORT_CODES and item.get("series")
+    }
+    if len(series_ids) != len(CORE_SPORT_CODES):
+        missing = sorted(CORE_SPORT_CODES - set(series_ids))
+        raise RuntimeError(f"Polymarket sports metadata missing core series: {missing}")
+    for sport, series_id in series_ids.items():
+        query = urllib.parse.urlencode(
+            {
+                "series_id": series_id,
+                "active": "true",
+                "closed": "false",
+                "limit": 500,
+                "order": "endDate",
+                "ascending": "true",
+                "end_date_min": f"{today.isoformat()}T00:00:00Z",
+                "end_date_max": f"{cutoff.isoformat()}T23:59:59Z",
+            }
+        )
+        for event in fetch_json(f"{GAMMA_EVENTS}?{query}"):
+            slug = str(event.get("slug") or "")
+            if not slug.startswith(f"{sport}-") or not _is_parent_match_slug(slug):
+                continue
+            all_slugs.add(slug)
+            event_titles[slug] = str(event.get("title") or "")
+
+    # Child events are fetched alongside each parent match in main().
+    clean_slugs = [slug for slug in all_slugs if _is_parent_match_slug(slug)]
 
     matches = []
     seen_slugs = set()
@@ -148,7 +247,7 @@ def discover_matches(days_ahead: int = 7) -> list[dict]:
         matches.append({
             "slug": slug,
             "url": event_url,
-            "display_text": slug.replace("-", " ").title(),
+            "display_text": event_titles.get(slug) or slug.replace("-", " ").title(),
             "match_date": match_date.isoformat(),
         })
 
@@ -166,11 +265,40 @@ def extract_match_metadata(html: str) -> dict:
     home_team = teams[0].strip() if len(teams) >= 1 else ""
     away_team = teams[1].strip() if len(teams) >= 2 else ""
 
+    for raw in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, list):
+            data = data[0] if data and isinstance(data[0], dict) else {}
+        if not isinstance(data, dict):
+            continue
+        if data.get("@type") != "SportsEvent" and not data.get("homeTeam") and not data.get("awayTeam"):
+            continue
+        title = data.get("name") or title
+        kickoff = data.get("startDate") or kickoff
+        home_team = ((data.get("homeTeam") or {}).get("name") or home_team)
+        away_team = ((data.get("awayTeam") or {}).get("name") or away_team)
+        break
+
     return {
         "title": title,
         "home_team": home_team,
         "away_team": away_team,
         "kickoff": kickoff,
+    }
+
+
+def event_match_metadata(event: dict) -> dict:
+    """Use Gamma event fields; endDate is the scheduled kickoff for sports."""
+    title = decode_json_text(str(event.get("title") or ""))
+    teams = re.split(r"\s+vs\.?\s+", title, maxsplit=1, flags=re.IGNORECASE)
+    return {
+        "title": title,
+        "home_team": teams[0].strip() if len(teams) >= 1 else "",
+        "away_team": teams[1].strip() if len(teams) >= 2 else "",
+        "kickoff": event.get("endDate"),
     }
 
 
@@ -191,6 +319,20 @@ def line_from_text(value: str):
         return float(match.group(1))
     match = re.search(r"([+-]?\d+(?:\.\d+)?)", value or "")
     return float(match.group(1)) if match else None
+
+
+def is_quarter_handicap(line: float) -> bool:
+    """Return True for unsupported quarter lines such as +/-0.25 and +/-0.75."""
+    doubled = abs(float(line)) * 2
+    return not math.isclose(doubled, round(doubled), abs_tol=1e-9)
+
+
+def team_total_from_title(value: str) -> tuple[str, float] | None:
+    """Parse titles such as 'SSC Napoli O/U 1.5'."""
+    match = re.search(r"^(.+?)\s+O/U\s+([+-]?\d+(?:\.\d+)?)$", value or "", re.IGNORECASE)
+    if not match:
+        return None
+    return local_team(match.group(1).strip()), float(match.group(2))
 
 
 def decimal_odds(price) -> float | None:
@@ -251,9 +393,19 @@ def convert_all_markets(match_id: str, objects: list[dict], include_extra_market
                 add_price(rows, match_id, "BTTS", "BTTS Yes", prices[0])
                 add_price(rows, match_id, "BTTS", "BTTS No", prices[1])
 
+        elif market_type == "soccer_team_totals":
+            parsed = team_total_from_title(title)
+            if parsed is not None and len(prices) >= 2:
+                team, line = parsed
+                add_price(rows, match_id, "TT", f"{team} O{line:g}", prices[0])
+                add_price(rows, match_id, "TT", f"{team} U{line:g}", prices[1])
+
         elif market_type == "spreads":
             line = line_from_text(title)
             if line is not None and len(outcomes) >= 2 and len(prices) >= 2:
+                if is_quarter_handicap(line):
+                    unsupported += 1
+                    continue
                 first_team = local_team(outcomes[0])
                 second_team = local_team(outcomes[1])
                 add_price(rows, match_id, "AH", f"{first_team} AH {line:+g}", prices[0])
@@ -344,8 +496,8 @@ def import_rows(rows: list[dict], bookmaker: str, overwrite: bool, dry_run: bool
 
         cursor.execute(
             """
-            INSERT INTO odds (match_id, bookmaker, market, selection, odds, implied_prob)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO odds (match_id, bookmaker, market, selection, odds, implied_prob, scraped_at)
+            VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
             """,
             (
                 row["match_id"],
@@ -354,6 +506,7 @@ def import_rows(rows: list[dict], bookmaker: str, overwrite: bool, dry_run: bool
                 row["selection"],
                 row["odds"],
                 round(1.0 / row["odds"], 4),
+                row.get('scraped_at'),
             ),
         )
         saved += 1
@@ -438,6 +591,7 @@ def main():
     unresolved_matches = 0
     unsupported_markets = 0
     bad_rows = 0
+    missing_more_market_events = 0
 
     print(f"\n[2/4] Fetching match pages...")
     for i, match in enumerate(matches, 1):
@@ -445,9 +599,22 @@ def main():
         print(f"  [{i}/{len(matches)}] {safe_text} ({match['match_date']})")
 
         try:
-            html = fetch_html(match["url"])
-            meta = extract_match_metadata(html)
-            objects = market_objects(html)
+            primary_event = fetch_event_by_slug(match["slug"], missing_ok=True)
+            if primary_event:
+                meta = event_match_metadata(primary_event)
+                html_objects = []
+            else:
+                html = fetch_html(match["url"])
+                meta = extract_match_metadata(html)
+                html_objects = market_objects(html)
+            more_event = fetch_event_by_slug(f"{match['slug']}-more-markets", missing_ok=True)
+            if not more_event:
+                missing_more_market_events += 1
+            objects = merge_market_objects(
+                html_objects,
+                primary_event.get("markets", []),
+                more_event.get("markets", []),
+            )
 
             match_id, created = resolve_or_create_match(
                 meta,
@@ -470,7 +637,10 @@ def main():
             all_odds_rows.extend(rows)
             unsupported_markets += validation["unsupported_markets"]
             bad_rows += validation["bad_rows"]
-            print(f"    -> {len(rows)} odds rows ({len(objects)} markets)")
+            print(
+                f"    -> {len(rows)} odds rows ({len(objects)} markets; "
+                f"more-markets={'yes' if more_event else 'no'})"
+            )
 
         except Exception as e:
             print(f"    -> ERROR: {e}")
@@ -492,6 +662,7 @@ def main():
         f"Resolved validation: unresolved_matches={unresolved_matches}, "
         f"created_fixtures={created_fixtures}, unsupported_markets={unsupported_markets}, bad_rows={bad_rows}"
     )
+    print(f"Coverage validation: missing_more_market_events={missing_more_market_events}")
 
     if args.save_csv:
         print(f"\n[4/4] Exporting to {args.save_csv}...")

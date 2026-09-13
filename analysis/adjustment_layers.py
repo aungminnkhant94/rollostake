@@ -11,6 +11,7 @@ import json
 import math
 import re
 import sqlite3
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,9 +19,14 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from config.paths import DB_PATH, PROJECT_ROOT
 from utils.match_resolver import parse_kickoff_utc
+from utils.match_history import reconcile_history
 
 
 DOMESTIC_LEAGUES = {"EPL", "L1", "Bundesliga", "SerieA", "LaLiga"}
+EVIDENCE_ACTIVE = "ACTIVE"
+EVIDENCE_NO_SIGNAL = "NO_SIGNAL"
+EVIDENCE_NOT_APPLICABLE = "NOT_APPLICABLE"
+EVIDENCE_MISSING = "MISSING_DATA"
 EURO_TERMS = (
     ("champions", 0.95, "CL"),
     ("ucl", 0.95, "CL"),
@@ -84,6 +90,7 @@ class LayerMove:
     away_after: float
     note: str
     active: bool
+    evidence_state: str = EVIDENCE_NO_SIGNAL
 
     def as_row(self, match_id: str) -> Tuple:
         return (
@@ -96,6 +103,7 @@ class LayerMove:
             round(self.away_after, 4),
             self.note,
             1 if self.active else 0,
+            self.evidence_state,
         )
 
 
@@ -136,6 +144,7 @@ class AdjustmentLayerEngine:
         }
         self._manual_context = self._load_manual_context()
         self._cache: Dict[Tuple, object] = {}
+        self._current_match_key: Optional[Tuple[str, str, str]] = None
 
     def apply(self, match: Dict, preds: Dict) -> Dict:
         """Return adjusted prediction dict with layer notes and audit rows."""
@@ -149,6 +158,12 @@ class AdjustmentLayerEngine:
         league = str(match.get("league") or "")
         kickoff = str(match.get("kickoff") or "")
         match_id = str(match.get("match_id") or "")
+        kickoff_utc = parse_kickoff_utc(kickoff)
+        self._current_match_key = (
+            home,
+            away,
+            kickoff_utc.date().isoformat() if kickoff_utc else kickoff[:10],
+        )
 
         home_lambda = max(float(preds.get("lambda_h") or 0), 0.01)
         away_lambda = max(float(preds.get("lambda_a") or 0), 0.01)
@@ -174,7 +189,7 @@ class AdjustmentLayerEngine:
             moves, home_lambda, away_lambda, home, away
         )
         home_lambda, away_lambda = self._layer_injuries(
-            moves, home_lambda, away_lambda, home, away
+            moves, home_lambda, away_lambda, home, away, kickoff
         )
         home_lambda, away_lambda = self._layer_competition_fatigue(
             moves, home_lambda, away_lambda, home, away, kickoff, EURO_TERMS, 8, "Euro fatigue", rest_blocked
@@ -269,9 +284,38 @@ class AdjustmentLayerEngine:
         kickoff: str,
     ) -> Tuple[float, float]:
         before_h, before_a = lambda_h, lambda_a
-        home_form = self._form_lambda(home, away, "home", league, kickoff, lambda_h)
-        away_form = self._form_lambda(away, home, "away", league, kickoff, lambda_a)
+        home_stats = self._team_stats(home, kickoff, limit=6, days=120)
+        away_stats = self._team_stats(away, kickoff, limit=6, days=120)
+        history_window = 120
+        if int(home_stats.get("played") or 0) < 3 or int(away_stats.get("played") or 0) < 3:
+            home_carry = self._team_stats(home, kickoff, limit=6, days=365)
+            away_carry = self._team_stats(away, kickoff, limit=6, days=365)
+            if int(home_carry.get("played") or 0) < 3 or int(away_carry.get("played") or 0) < 3:
+                self._record(
+                    moves,
+                    1,
+                    "Rolling blend",
+                    before_h,
+                    before_a,
+                    lambda_h,
+                    lambda_a,
+                    f"insufficient form history: {home} {int(home_carry.get('played') or 0)} matches, "
+                    f"{away} {int(away_carry.get('played') or 0)} matches; need 3 each",
+                    active=False,
+                    evidence_state=EVIDENCE_MISSING,
+                )
+                return lambda_h, lambda_a
+            home_stats, away_stats = home_carry, away_carry
+            history_window = 365
+        home_form = self._form_lambda(
+            home, away, "home", league, kickoff, lambda_h, days=history_window
+        )
+        away_form = self._form_lambda(
+            away, home, "away", league, kickoff, lambda_a, days=history_window
+        )
         notes = []
+        if history_window == 365:
+            notes.append("early-season carryover: last six matches within 365d")
         if self._diverges(lambda_h, home_form):
             lambda_h = (lambda_h + home_form) / 2
             notes.append(f"home form blend {before_h:.2f}->{lambda_h:.2f}")
@@ -287,7 +331,7 @@ class AdjustmentLayerEngine:
             lambda_h,
             lambda_a,
             "; ".join(notes) or f"form did not diverge by >{self.rolling_threshold:.0%}",
-            active=bool(notes),
+            active=abs(lambda_h - before_h) >= 0.005 or abs(lambda_a - before_a) >= 0.005,
         )
         return lambda_h, lambda_a
 
@@ -304,7 +348,18 @@ class AdjustmentLayerEngine:
         before_h, before_a = lambda_h, lambda_a
         ratings, sos = self._elo_snapshot(league, kickoff)
         if home not in ratings or away not in ratings:
-            self._record(moves, 2, "Elo SoS", before_h, before_a, lambda_h, lambda_a, "not enough league Elo history", False)
+            self._record(
+                moves,
+                2,
+                "Elo SoS",
+                before_h,
+                before_a,
+                lambda_h,
+                lambda_a,
+                "not enough league Elo history",
+                False,
+                evidence_state=EVIDENCE_MISSING,
+            )
             return lambda_h, lambda_a
 
         home_elo = ratings[home]
@@ -343,9 +398,25 @@ class AdjustmentLayerEngine:
         before_h, before_a = lambda_h, lambda_a
         home_mult, home_note = self._finishing_multiplier(home, kickoff)
         away_mult, away_note = self._finishing_multiplier(away, kickoff)
+        missing_xg = [team for team in (home, away) if not self._has_xg_context(team)]
+        missing_finishing = [
+            team for team in missing_xg if not self._has_finishing_proxy(team, kickoff)
+        ]
         lambda_h *= home_mult
         lambda_a *= away_mult
         notes = [note for note in (home_note, away_note) if note]
+        if missing_xg:
+            proxy_teams = [team for team in missing_xg if team not in missing_finishing]
+            if proxy_teams:
+                notes.insert(
+                    0,
+                    f"xG unavailable for {', '.join(proxy_teams)}; verified goal-history proxy used",
+                )
+        if missing_finishing:
+            notes.insert(
+                0,
+                f"insufficient xG or goal-history evidence for {', '.join(missing_finishing)}",
+            )
         self._record(
             moves,
             3,
@@ -354,8 +425,9 @@ class AdjustmentLayerEngine:
             before_a,
             lambda_h,
             lambda_a,
-            "; ".join(notes) or "no xG/finishing divergence",
-            active=bool(notes),
+            "; ".join(notes) or "xG context present with no finishing divergence",
+            active=abs(home_mult - 1.0) >= 0.005 or abs(away_mult - 1.0) >= 0.005,
+            evidence_state=EVIDENCE_MISSING if missing_finishing else None,
         )
         return lambda_h, lambda_a
 
@@ -372,6 +444,12 @@ class AdjustmentLayerEngine:
         before_h, before_a = lambda_h, lambda_a
         home_mult, home_note = self._motivation_multiplier(home, league, kickoff)
         away_mult, away_note = self._motivation_multiplier(away, league, kickoff)
+        table = self._league_table(league, kickoff)
+        motivation_covered = all(
+            bool(self._team_context(team).get("motivation"))
+            or bool(table.get(team) and int(table[team].get("played") or 0) >= 6)
+            for team in (home, away)
+        )
         lambda_h *= home_mult
         lambda_a *= away_mult
         notes = [note for note in (home_note, away_note) if note]
@@ -385,6 +463,7 @@ class AdjustmentLayerEngine:
             lambda_a,
             "; ".join(notes) or "no table/manual motivation signal",
             active=bool(notes),
+            evidence_state=None if motivation_covered else EVIDENCE_MISSING,
         )
         return lambda_h, lambda_a
 
@@ -399,6 +478,10 @@ class AdjustmentLayerEngine:
         before_h, before_a = lambda_h, lambda_a
         home_mult, home_note = self._manager_multiplier(home)
         away_mult, away_note = self._manager_multiplier(away)
+        manager_reviewed = all(
+            any(key in self._team_context(team) for key in ("manager_bounce", "manager"))
+            for team in (home, away)
+        )
         lambda_h *= home_mult
         lambda_a *= away_mult
         notes = [note for note in (home_note, away_note) if note]
@@ -412,6 +495,7 @@ class AdjustmentLayerEngine:
             lambda_a,
             "; ".join(notes) or "no manager-bounce signal",
             active=bool(notes),
+            evidence_state=None if manager_reviewed else EVIDENCE_MISSING,
         )
         return lambda_h, lambda_a
 
@@ -425,7 +509,18 @@ class AdjustmentLayerEngine:
     ) -> Tuple[float, float]:
         before_h, before_a = lambda_h, lambda_a
         if not self._is_derby(home, away):
-            self._record(moves, 6, "Derby", before_h, before_a, lambda_h, lambda_a, "not a configured derby", False)
+            self._record(
+                moves,
+                6,
+                "Derby",
+                before_h,
+                before_a,
+                lambda_h,
+                lambda_a,
+                "not a configured derby",
+                False,
+                evidence_state=EVIDENCE_NOT_APPLICABLE,
+            )
             return lambda_h, lambda_a
         lambda_h *= 1.03
         lambda_a *= 1.03
@@ -439,12 +534,33 @@ class AdjustmentLayerEngine:
         lambda_a: float,
         home: str,
         away: str,
+        kickoff: str,
     ) -> Tuple[float, float]:
         before_h, before_a = lambda_h, lambda_a
         home_news = self._team_news_items(home)
         away_news = self._team_news_items(away)
+        home_depth = self._squad_depth_note(home)
+        away_depth = self._squad_depth_note(away)
+        depth_note = "; ".join(note for note in (home_depth, away_depth) if note)
+        news_feed_fresh = all(self._team_news_feed_fresh(kickoff, team=team) for team in (home, away))
         if not home_news and not away_news:
-            self._record(moves, 7, "Injuries", before_h, before_a, lambda_h, lambda_a, "no active injury/suspension rows", False)
+            self._record(
+                moves,
+                7,
+                "Injuries",
+                before_h,
+                before_a,
+                lambda_h,
+                lambda_a,
+                (
+                    "fresh team-news feed found no active injury/suspension rows"
+                    if news_feed_fresh
+                    else "team-news coverage is missing or stale"
+                )
+                + (f"; {depth_note}" if depth_note else "; squad-depth coverage missing"),
+                False,
+                evidence_state=EVIDENCE_NO_SIGNAL if news_feed_fresh else EVIDENCE_MISSING,
+            )
             return lambda_h, lambda_a
 
         home_mult = 1.0
@@ -477,8 +593,10 @@ class AdjustmentLayerEngine:
             before_a,
             lambda_h,
             lambda_a,
-            f"{home}: {len(home_news)} rows, {away}: {len(away_news)} rows",
+            f"{home}: {len(home_news)} rows, {away}: {len(away_news)} rows"
+            + (f"; {depth_note}" if depth_note else "; squad-depth coverage missing"),
             active=abs(home_mult - 1.0) >= 0.005 or abs(away_mult - 1.0) >= 0.005,
+            evidence_state=None if news_feed_fresh else EVIDENCE_MISSING,
         )
         return lambda_h, lambda_a
 
@@ -505,6 +623,10 @@ class AdjustmentLayerEngine:
         lambda_h *= home_mult
         lambda_a *= away_mult
         notes = [note for note in (home_note, away_note) if note]
+        coverage_confirmed = all(
+            self._team_context(team).get("euro_schedule_checked" if layer_no == 8 else "cup_schedule_checked") is not None
+            for team in (home, away)
+        )
         self._record(
             moves,
             layer_no,
@@ -515,6 +637,7 @@ class AdjustmentLayerEngine:
             lambda_a,
             "; ".join(notes) or f"no recent {layer_name.lower()} signal",
             active=bool(notes),
+            evidence_state=None if notes or coverage_confirmed else EVIDENCE_MISSING,
         )
         return lambda_h, lambda_a
 
@@ -529,6 +652,8 @@ class AdjustmentLayerEngine:
         blocked: Dict[str, bool],
     ) -> Tuple[float, float]:
         before_h, before_a = lambda_h, lambda_a
+        home_last = self._last_match_time(home, kickoff)
+        away_last = self._last_match_time(away, kickoff)
         home_mult, home_note = self._rest_multiplier(home, kickoff, blocked.get("home", False))
         away_mult, away_note = self._rest_multiplier(away, kickoff, blocked.get("away", False))
         lambda_h *= home_mult
@@ -545,6 +670,7 @@ class AdjustmentLayerEngine:
             lambda_a,
             "; ".join(notes) or "no rest-days signal",
             active=active,
+            evidence_state=EVIDENCE_MISSING if home_last is None or away_last is None else None,
         )
         return lambda_h, lambda_a
 
@@ -563,6 +689,7 @@ class AdjustmentLayerEngine:
         lambda_h *= home_mult
         lambda_a *= away_mult
         notes = [note for note in (home_note, away_note) if note]
+        rotation_reviewed = all("rotation_risk" in self._team_context(team) for team in (home, away))
         self._record(
             moves,
             11,
@@ -573,6 +700,7 @@ class AdjustmentLayerEngine:
             lambda_a,
             "; ".join(notes) or "no rotation trigger",
             active=bool(notes),
+            evidence_state=None if notes or rotation_reviewed else EVIDENCE_MISSING,
         )
         return lambda_h, lambda_a
 
@@ -591,6 +719,11 @@ class AdjustmentLayerEngine:
         lambda_h *= home_mult
         lambda_a *= away_mult
         notes = [note for note in (home_note, away_note) if note]
+        recent_covered = all(
+            int(self._team_stats(team, kickoff, limit=6, days=120).get("played") or 0) >= 4
+            and int(self._team_stats(team, kickoff, limit=40, days=365).get("played") or 0) >= 8
+            for team in (home, away)
+        )
         self._record(
             moves,
             12,
@@ -601,12 +734,22 @@ class AdjustmentLayerEngine:
             lambda_a,
             "; ".join(notes) or "no recent-vs-season luck gap",
             active=bool(notes),
+            evidence_state=None if recent_covered else EVIDENCE_MISSING,
         )
         return lambda_h, lambda_a
 
-    def _form_lambda(self, team: str, opponent: str, side: str, league: str, kickoff: str, fallback: float) -> float:
-        team_stats = self._team_stats(team, kickoff, limit=6, days=120)
-        opp_stats = self._team_stats(opponent, kickoff, limit=6, days=120)
+    def _form_lambda(
+        self,
+        team: str,
+        opponent: str,
+        side: str,
+        league: str,
+        kickoff: str,
+        fallback: float,
+        days: int = 120,
+    ) -> float:
+        team_stats = self._team_stats(team, kickoff, limit=6, days=days)
+        opp_stats = self._team_stats(opponent, kickoff, limit=6, days=days)
         league_avg = self._league_averages(league, kickoff)
         team_for = team_stats.get("gf_avg")
         opp_against = opp_stats.get("ga_avg")
@@ -635,6 +778,8 @@ class AdjustmentLayerEngine:
             return 1.0, ""
 
         recent = self._team_stats(team, kickoff, limit=6, days=120)
+        if int(recent.get("played") or 0) < 4:
+            recent = self._team_stats(team, kickoff, limit=6, days=365)
         season = self._team_stats(team, kickoff, limit=40, days=365)
         if recent.get("played", 0) < 4 or season.get("played", 0) < 8:
             return 1.0, ""
@@ -706,7 +851,7 @@ class AdjustmentLayerEngine:
             return 1.0, ""
         best = None
         for row in self._team_matches(team):
-            row_time = parse_kickoff_utc(str(row.get("kickoff") or ""))
+            row_time = row.get("_kickoff_utc") or parse_kickoff_utc(str(row.get("kickoff") or ""))
             if row_time is None or row_time >= target:
                 continue
             delta_days = (target - row_time).total_seconds() / 86400
@@ -752,7 +897,7 @@ class AdjustmentLayerEngine:
         if target is None:
             return 1.0, ""
         for row in self._team_all_fixtures(team):
-            row_time = parse_kickoff_utc(str(row.get("kickoff") or ""))
+            row_time = row.get("_kickoff_utc") or parse_kickoff_utc(str(row.get("kickoff") or ""))
             if row_time is None or row_time <= target:
                 continue
             delta_days = (row_time - target).total_seconds() / 86400
@@ -782,7 +927,7 @@ class AdjustmentLayerEngine:
         return 1.0, ""
 
     def _team_stats(self, team: str, kickoff: str, limit: int, days: int) -> Dict:
-        key = ("team_stats", team, kickoff[:16], limit, days)
+        key = ("team_stats", team, kickoff[:16], limit, days, self._current_match_key)
         if key in self._cache:
             return self._cache[key]  # type: ignore[return-value]
 
@@ -790,7 +935,9 @@ class AdjustmentLayerEngine:
         cutoff_ts = target.timestamp() - days * 86400 if target else None
         rows = []
         for row in self._team_matches(team):
-            row_time = parse_kickoff_utc(str(row.get("kickoff") or ""))
+            if self._is_current_fixture_duplicate(row):
+                continue
+            row_time = row.get("_kickoff_utc") or parse_kickoff_utc(str(row.get("kickoff") or ""))
             if row_time is None:
                 continue
             if target and row_time >= target:
@@ -827,10 +974,15 @@ class AdjustmentLayerEngine:
         self._cache[key] = result
         return result
 
-    def _team_matches(self, team: str) -> List[Dict]:
-        key = ("team_matches", team)
+    def _history_rows(self, league=None) -> List[Dict]:
+        """Use one immutable completed-history snapshot per calculation engine."""
+        key = ('completed_history', league)
         if key in self._cache:
-            return self._cache[key]  # type: ignore[return-value]
+            return self._cache[key]
+        if league is not None:
+            rows = [r for r in self._history_rows() if r['league'] == league]
+            self._cache[key] = rows
+            return rows
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -838,16 +990,25 @@ class AdjustmentLayerEngine:
             """
             SELECT match_id, home_team, away_team, league, kickoff, home_goals, away_goals, status
             FROM matches
-            WHERE (home_team = ? OR away_team = ?)
-              AND home_goals IS NOT NULL
+            WHERE home_goals IS NOT NULL
               AND away_goals IS NOT NULL
+              AND status = 'completed'
             """,
-            (team, team),
         )
-        rows = [dict(row) for row in c.fetchall()]
+        rows = reconcile_history(c.fetchall())
         conn.close()
+        for row in rows:
+            row['_kickoff_utc'] = parse_kickoff_utc(str(row.get('kickoff') or ''))
         self._cache[key] = rows
         return rows
+
+    def _team_matches(self, team: str) -> List[Dict]:
+        from utils.team_normalizer import normalize_team_name
+        key = ('team_matches', team)
+        if key not in self._cache:
+            canonical = normalize_team_name(team)
+            self._cache[key] = [r for r in self._history_rows() if canonical in (r['home_team'], r['away_team'])]
+        return self._cache[key]
 
     def _team_all_fixtures(self, team: str) -> List[Dict]:
         key = ("team_all_fixtures", team)
@@ -875,39 +1036,48 @@ class AdjustmentLayerEngine:
             return None
         times = []
         for row in self._team_matches(team):
-            row_time = parse_kickoff_utc(str(row.get("kickoff") or ""))
+            if self._is_current_fixture_duplicate(row):
+                continue
+            row_time = row.get("_kickoff_utc") or parse_kickoff_utc(str(row.get("kickoff") or ""))
             if row_time and row_time < target:
                 times.append(row_time)
         return max(times) if times else None
 
+    def _is_current_fixture_duplicate(self, row) -> bool:
+        if not self._current_match_key:
+            return False
+        def value(key: str):
+            if hasattr(row, "get"):
+                return row.get(key)
+            try:
+                return row[key]
+            except (IndexError, KeyError):
+                return None
+
+        kickoff = str(value("kickoff") or "")
+        row_time = parse_kickoff_utc(kickoff)
+        row_day = row_time.date().isoformat() if row_time else kickoff[:10]
+        return (
+            str(value("home_team") or ""),
+            str(value("away_team") or ""),
+            row_day,
+        ) == self._current_match_key
+
     def _league_averages(self, league: str, kickoff: str) -> Dict[str, float]:
-        key = ("league_avg", league, kickoff[:10])
+        key = ("league_avg", league, kickoff[:10], self._current_match_key)
         if key in self._cache:
             return self._cache[key]  # type: ignore[return-value]
         target = parse_kickoff_utc(kickoff)
         home_goals = []
         away_goals = []
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT kickoff, home_goals, away_goals
-            FROM matches
-            WHERE league = ?
-              AND status = 'completed'
-              AND home_goals IS NOT NULL
-              AND away_goals IS NOT NULL
-            """,
-            (league,),
-        )
-        for row in c.fetchall():
-            row_time = parse_kickoff_utc(str(row["kickoff"] or ""))
+        for row in self._history_rows(league):
+            if self._is_current_fixture_duplicate(row):
+                continue
+            row_time = row["_kickoff_utc"]
             if target and row_time and row_time >= target:
                 continue
             home_goals.append(float(row["home_goals"]))
             away_goals.append(float(row["away_goals"]))
-        conn.close()
         result = {
             "home_goals": sum(home_goals) / len(home_goals) if home_goals else 1.45,
             "away_goals": sum(away_goals) / len(away_goals) if away_goals else 1.15,
@@ -916,31 +1086,18 @@ class AdjustmentLayerEngine:
         return result
 
     def _league_table(self, league: str, kickoff: str) -> Dict[str, Dict]:
-        key = ("league_table", league, kickoff[:10])
+        key = ("league_table", league, kickoff[:10], self._current_match_key)
         if key in self._cache:
             return self._cache[key]  # type: ignore[return-value]
         target = parse_kickoff_utc(kickoff)
         rows = []
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT home_team, away_team, kickoff, home_goals, away_goals
-            FROM matches
-            WHERE league = ?
-              AND status = 'completed'
-              AND home_goals IS NOT NULL
-              AND away_goals IS NOT NULL
-            """,
-            (league,),
-        )
-        for row in c.fetchall():
-            row_time = parse_kickoff_utc(str(row["kickoff"] or ""))
+        for row in self._history_rows(league):
+            if self._is_current_fixture_duplicate(row):
+                continue
+            row_time = row["_kickoff_utc"]
             if target and row_time and row_time >= target:
                 continue
             rows.append(dict(row))
-        conn.close()
 
         table: Dict[str, Dict] = {}
         for row in rows:
@@ -973,33 +1130,20 @@ class AdjustmentLayerEngine:
         return table
 
     def _elo_snapshot(self, league: str, kickoff: str) -> Tuple[Dict[str, float], Dict[str, float]]:
-        key = ("elo", league, kickoff[:10])
+        key = ("elo", league, kickoff[:10], self._current_match_key)
         if key in self._cache:
             return self._cache[key]  # type: ignore[return-value]
         target = parse_kickoff_utc(kickoff)
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT home_team, away_team, kickoff, home_goals, away_goals
-            FROM matches
-            WHERE league = ?
-              AND status = 'completed'
-              AND home_goals IS NOT NULL
-              AND away_goals IS NOT NULL
-            """,
-            (league,),
-        )
         rows = []
-        for row in c.fetchall():
-            row_time = parse_kickoff_utc(str(row["kickoff"] or ""))
+        for row in self._history_rows(league):
+            if self._is_current_fixture_duplicate(row):
+                continue
+            row_time = row["_kickoff_utc"]
             if row_time is None:
                 continue
             if target and row_time >= target:
                 continue
             rows.append((row_time, dict(row)))
-        conn.close()
         rows.sort(key=lambda item: item[0])
 
         ratings: Dict[str, float] = {}
@@ -1049,21 +1193,101 @@ class AdjustmentLayerEngine:
             return []
         c.execute(
             """
-            SELECT player, team, status, reason, source, confidence
+            SELECT *
             FROM team_news
             WHERE team = ?
-              AND LOWER(status) IN ('injured', 'injury', 'suspended', 'out', 'doubtful')
             """,
             (team,),
         )
-        rows = [dict(row) for row in c.fetchall()]
+        from utils.player_news import injury_news, player_key
+        rows = injury_news([dict(row) for row in c.fetchall()])
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='squad_players'")
+        if c.fetchone():
+            c.execute("SELECT player_name, position FROM squad_players WHERE team = ?", (team,))
+            positions = {
+                player_key(team, player_name): position
+                for player_name, position in c.fetchall()
+                if player_name
+            }
+            for row in rows:
+                row["position"] = positions.get(player_key(team, row.get("player")), "")
         conn.close()
         self._cache[key] = rows
         return rows
 
+    def _squad_depth_note(self, team: str) -> str:
+        key = ("squad_depth", team)
+        if key in self._cache:
+            return str(self._cache[key])
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='squad_depth'")
+        if not c.fetchone():
+            conn.close()
+            self._cache[key] = ""
+            return ""
+        c.execute(
+            """
+            SELECT goalkeepers, defenders, midfielders, forwards, total_players
+            FROM squad_depth
+            WHERE team = ?
+            LIMIT 1
+            """,
+            (team,),
+        )
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            note = ""
+        else:
+            note = (
+                f"{team} depth {int(row['total_players'])} "
+                f"({int(row['goalkeepers'])}G/{int(row['defenders'])}D/"
+                f"{int(row['midfielders'])}M/{int(row['forwards'])}F)"
+            )
+        self._cache[key] = note
+        return note
+
     def _team_context(self, team: str) -> Dict:
         teams = self._manual_context.get("teams", {})
         return teams.get(team, {})
+
+    def _has_xg_context(self, team: str) -> bool:
+        context = self._team_context(team)
+        goals_for = self._number(context.get("goals_for_90") or context.get("goals_for"))
+        xg_for = self._number(context.get("xg_for_90") or context.get("xg_for"))
+        return goals_for is not None and xg_for is not None and xg_for > 0
+
+    def _has_finishing_proxy(self, team: str, kickoff: str) -> bool:
+        recent = self._team_stats(team, kickoff, limit=6, days=120)
+        if int(recent.get("played") or 0) < 4:
+            recent = self._team_stats(team, kickoff, limit=6, days=365)
+        season = self._team_stats(team, kickoff, limit=40, days=365)
+        return int(recent.get("played") or 0) >= 4 and int(season.get("played") or 0) >= 8
+
+    def _team_news_feed_fresh(self, kickoff: str, max_age_days: int = 7, team: str = None) -> bool:
+        from utils.player_news import news_time, reconcile_news
+        key = ("team_news_fresh", kickoff, max_age_days, team)
+        if key in self._cache:
+            return bool(self._cache[key])
+        target = parse_kickoff_utc(kickoff)
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='team_news'")
+        if not c.fetchone():
+            conn.close()
+            return False
+        c.execute("SELECT * FROM team_news" + (" WHERE team = ?" if team else ""), (team,) if team else ())
+        rows = reconcile_news([dict(row) for row in c.fetchall()])
+        conn.close()
+        if not rows or target is None:
+            self._cache[key] = False
+            return False
+        fresh = all(0 <= (target - news_time(row)).total_seconds() / 86400 <= max_age_days for row in rows)
+        self._cache[key] = fresh
+        return fresh
 
     def _load_manual_context(self) -> Dict:
         if not self.manual_context_path.exists():
@@ -1082,12 +1306,23 @@ class AdjustmentLayerEngine:
             weight += 0.2
         return weight
 
+    def _person_key(self, value: object) -> str:
+        text = unicodedata.normalize("NFKD", str(value or ""))
+        text = "".join(char for char in text if not unicodedata.combining(char))
+        return re.sub(r"[^a-z0-9]+", "", text.casefold())
+
     def _news_attack_hit(self, item: Dict) -> bool:
-        text = " ".join(str(item.get(field) or "") for field in ("player", "status", "reason")).lower()
+        text = " ".join(
+            str(item.get(field) or "")
+            for field in ("player", "status", "reason", "position")
+        ).lower()
         return any(word in text for word in ("striker", "forward", "winger", "attacker", "playmaker", "top scorer", "scorer", "goal"))
 
     def _news_defense_hit(self, item: Dict) -> bool:
-        text = " ".join(str(item.get(field) or "") for field in ("player", "status", "reason")).lower()
+        text = " ".join(
+            str(item.get(field) or "")
+            for field in ("player", "status", "reason", "position")
+        ).lower()
         return any(word in text for word in ("defender", "defense", "centre-back", "center-back", "full-back", "goalkeeper", "keeper", "gk"))
 
     def _probabilities(self, lambda_h: float, lambda_a: float) -> Dict[str, float]:
@@ -1111,8 +1346,7 @@ class AdjustmentLayerEngine:
         prob_over_2_5 = sum(prob for (h, a), prob in matrix.items() if h + a > 2.5)
         prob_under_2_5 = sum(prob for (h, a), prob in matrix.items() if h + a <= 2.5)
         btts_raw = sum(prob for (h, a), prob in matrix.items() if h > 0 and a > 0)
-        zero_zero = matrix.get((0, 0), 0.0)
-        prob_btts = btts_raw / (1.0 - zero_zero) if zero_zero < 1.0 else 0.0
+        prob_btts = btts_raw  # 0-0 remains a losing outcome in the denominator.
         return {
             "prob_home_win": round(prob_home, 3),
             "prob_draw": round(prob_draw, 3),
@@ -1134,7 +1368,10 @@ class AdjustmentLayerEngine:
         after_a: float,
         note: str,
         active: bool,
+        evidence_state: Optional[str] = None,
     ) -> None:
+        if evidence_state is None:
+            evidence_state = EVIDENCE_ACTIVE if active else EVIDENCE_NO_SIGNAL
         moves.append(
             LayerMove(
                 layer_no=layer_no,
@@ -1145,6 +1382,7 @@ class AdjustmentLayerEngine:
                 away_after=float(after_a),
                 note=note,
                 active=active,
+                evidence_state=evidence_state,
             )
         )
 
@@ -1189,8 +1427,8 @@ def save_prediction_layers(match_id: str, layers: List[LayerMove]) -> None:
     c.executemany(
         """
         INSERT INTO prediction_adjustment_layers
-        (match_id, layer_no, layer_name, home_before, away_before, home_after, away_after, note, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (match_id, layer_no, layer_name, home_before, away_before, home_after, away_after, note, active, evidence_state)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [layer.as_row(match_id) for layer in layers],
     )
