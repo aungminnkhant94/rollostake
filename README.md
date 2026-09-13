@@ -1,327 +1,261 @@
-# Rollo Stake Model v1.0
+# RolloStake
 
-Systematic value-betting engine for soccer. Finds +EV bets by comparing Dixon-Coles model probabilities against bookmaker odds.
+RolloStake is a research-oriented football prediction and staking system. It
+fits Dixon-Coles goal models, adjusts expected goals with current context,
+compares model probabilities with market odds, applies learned selection
+rules, and publishes an auditable HTML dashboard.
 
-## Agent Handoff
+The repository is useful for studying an end-to-end decision system: data
+ingestion, probabilistic modelling, market pricing, risk controls, settlement,
+performance learning, and static dashboard generation. Predictions are
+uncertain and are not guarantees of profit.
 
-For workflow notes, model concepts, weekly steps, dashboard behavior, Parley rules, and current limitations, read [AGENTS.md](AGENTS.md) first.
+## Start here
 
-## Current Status: ✅ WORKING
+Read these files in order:
 
-**What's live:**
-- 7,989 real historical matches loaded (5 leagues, 2021-2025)
-- Dixon-Coles model fitted per league
-- 12 picks generated with realistic edges
-- Dark HTML dashboard with STRONG/KEEP/CAUTION classification
-- Kelly criterion staking (optimal bet sizing)
-- Team news adjustment CLI
+1. [`README.md`](README.md) — orientation, setup, and repository map.
+2. [`PROJECT_SPEC.md`](PROJECT_SPEC.md) — intended behaviour, data contracts,
+   implemented features, and known gaps.
+3. [`models/dixon_coles.py`](models/dixon_coles.py) — the core score model.
+4. [`analysis/adjustment_layers.py`](analysis/adjustment_layers.py) — the
+   contextual expected-goals pipeline.
+5. [`analysis/edge_calculator.py`](analysis/edge_calculator.py) — candidate
+   generation, pricing, learned adjustments, and risk-band selection.
+6. [`models/core.py`](models/core.py) — SQLite schema and persistence layer.
+7. [`dashboard/generator.py`](dashboard/generator.py) — dashboard rendering.
+8. [`tests/`](tests/) — executable examples of important behaviour.
+9. [`WEEKLY_AGENT_HANDOFF.md`](WEEKLY_AGENT_HANDOFF.md) — the controlled
+   production sequence and final-card audit.
 
-## Quick Start
+Agents working in this repository must also read [`AGENTS.md`](AGENTS.md).
+
+## Safe quick start
+
+The commands below install dependencies, run the test suite, and serve the
+existing dashboard. They do not generate or publish new picks.
+
+### Windows PowerShell
+
+```powershell
+git clone https://github.com/aungminnkhant94/rollostake.git
+cd rollostake
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -p "test_*.py"
+python -m http.server 8000 --directory dashboard
+```
+
+Open <http://127.0.0.1:8000> after starting the server.
+
+### macOS or Linux
 
 ```bash
-cd /home/ubuntu/rollo-stake-model
-./run_daily.sh
+git clone https://github.com/aungminnkhant94/rollostake.git
+cd rollostake
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -p 'test_*.py'
+python -m http.server 8000 --directory dashboard
 ```
 
-Then open `dashboard/index.html` in your browser.
+The current suite has been verified with Python 3.14. The direct dependencies
+are NumPy, SciPy, Requests, Beautiful Soup, and Playwright.
 
-## Weekly Fixture + Odds Workflow
+## How the system works
 
-Fetch real upcoming fixtures through token-free HTTP, export a blank odds slate, then fill the odds from your bookmaker.
-
-```bash
-python3 scripts/fetch_weekly_fixtures.py --days 7 --export week_slate.csv
-python3 scripts/import_weekly_slate.py week_slate.csv
-python3 main.py --skip-scrape --no-fatigue
+```mermaid
+flowchart TD
+    H[Historical completed matches] --> M[Dixon-Coles model per league]
+    F[Upcoming domestic fixtures] --> C[Context and evidence checks]
+    U[UEFA matches, squads, news, rest] --> C
+    M --> A[14-layer lambda adjustment]
+    C --> A
+    A --> P[Market probabilities]
+    O[Current Polymarket odds] --> E[Edge and eligibility]
+    P --> E
+    L[Settled RolloStake history] --> S[Learning and loss-trap filters]
+    X[External card structure] --> S
+    E --> S
+    S --> HR[High Risk singles]
+    S --> LR[Low Risk singles]
+    S --> PA[Separate Parley slips]
+    HR --> DB[(SQLite audit trail)]
+    LR --> DB
+    PA --> DB
+    DB --> D[Static HTML dashboard]
 ```
 
-On Windows PowerShell:
+Production model probabilities pass through these layers in order:
+
+1. rolling-form blend;
+2. Elo strength of schedule;
+3. finishing quality and xG proxy;
+4. motivation;
+5. manager bounce;
+6. derby context;
+7. injuries and suspensions;
+8. European fatigue;
+9. cup fatigue;
+10. rest days;
+11. rotation;
+12. luck regression;
+13. lambda cap; and
+14. Dixon-Coles low-score correction.
+
+Each layer records whether evidence was active, available with no signal, not
+applicable, or missing. This makes the final probability inspectable instead of
+leaving it as an unexplained number.
+
+## Products and markets
+
+| Track | Purpose |
+|---|---|
+| Low Risk (`D`) | Tighter-price single selections with their own bank and history. |
+| High Risk (`C`) | Higher-upside, more volatile singles with separate controls. |
+| Parley | Independently selected two-leg and three-leg slips with separate settlement and P&L. |
+
+`STRONG`, `KEEP`, and `CAUTION` are quality labels produced by implemented
+edge and learning rules. They are not guarantees, and their historical results
+must be evaluated separately.
+
+Supported official market families are:
+
+- `1X2` — home, draw, or away;
+- `OU` — match totals;
+- `BTTS` — both teams to score;
+- `TT` — team totals; and
+- `AH` — supported Asian handicap lines, including draw-no-bet shapes.
+
+Quarter-goal Asian handicaps are excluded because half-win and half-loss
+accounting is not implemented.
+
+## Prediction, review, publication, and settlement
+
+These are separate operations:
+
+| Operation | Effect |
+|---|---|
+| `python main.py --skip-scrape --no-fatigue --predictions-only` | Fits models and saves predictions for review. It does not publish an official card. |
+| `python scripts\rebuild_card.py --preview output\card-review.json` | Produces a review artifact without changing the database or dashboard. |
+| `python scripts\rebuild_card.py --publish-reviewed output\card-review.json` | Publishes the exact reviewed draft only if its inputs and safety checks still match. |
+| `python scripts\import_match_results.py match_results.csv` | Imports eligible final scores and settles singles and Parley legs. |
+
+The full weekly pipeline changes live data and must follow
+[`WEEKLY_AGENT_HANDOFF.md`](WEEKLY_AGENT_HANDOFF.md). It requires dry runs,
+final-status checks for relevant Champions League, Europa League, and
+Conference League matches, refreshed squad and news evidence, a card preview,
+and a separate publication review.
+
+The dashboard's manual `WIN`, `LOSS`, and `PUSH` controls only change browser
+`localStorage`. They are a visual preview and do not settle authoritative data.
+
+## Data model
+
+`data/rollo_stake.db` is the operational source of truth. Important tables
+include:
+
+| Table | Role |
+|---|---|
+| `matches` | Fixtures, kickoff times, scores, statuses, and fatigue context. |
+| `odds` | Market selections, decimal prices, implied probability, and collection time. |
+| `predictions` | Current model output for each match. |
+| `prediction_adjustment_layers` | Before-and-after lambdas and evidence for every layer. |
+| `picks` and `results` | Official singles and auditable settlement history. |
+| `team_news` | Current injury and suspension evidence. |
+| `squad_players` and `squad_depth` | Roster snapshots and positional coverage. |
+| `parley_slips` and `parley_legs` | Multi-leg exposure and settlement. |
+
+User-facing kickoff times and played dates are formatted in Macau time
+(`Asia/Macau`, UTC+8). Timestamp parsing belongs in
+[`utils/match_resolver.py`](utils/match_resolver.py); raw database strings
+should not be sliced directly for display.
+
+## Repository map
+
+```text
+rollostake/
+├── analysis/                  selection, context layers, fatigue, team news
+├── config/                    paths and active settings
+├── dashboard/                 static dashboard generator and generated HTML
+├── data/                      SQLite state and portable profiles
+├── friend_cards/              external cards used only for structure lessons
+├── models/                    database layer and Dixon-Coles implementations
+├── research/                  isolated historical experiments
+├── scrapers/                  fixtures, odds, squads, and news collection
+├── scripts/                   operational import, report, and publication CLIs
+├── tests/                     unit and workflow safety tests
+├── utils/                     match history, resolution, aliases, player news
+├── AGENTS.md                  agent scope and collaboration rules
+├── PROJECT_SPEC.md            intended and implemented system contract
+├── WEEKLY_AGENT_HANDOFF.md    canonical production workflow
+└── main.py                    model-fitting and prediction entry point
+```
+
+## Data sources
+
+- Football-Data.co.uk for historical results and odds inputs;
+- ESPN public scoreboards for domestic and UEFA fixtures;
+- ESPN rosters for squad and positional-depth snapshots;
+- Polymarket for supported current market prices;
+- browser or manual JSON evidence for injuries and team news; and
+- external prediction cards as a small aggregate structure signal.
+
+External cards never replace RolloStake's model probabilities, implemented
+eligibility gates, or settled internal learning.
+
+## Validation
+
+Run the repository tests with:
 
 ```powershell
-python scripts\fetch_weekly_fixtures.py --days 7 --export week_slate.csv
-python scripts\import_weekly_slate.py week_slate.csv
-python main.py --skip-scrape --no-fatigue
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
-### Team Total Odds
+The suite covers BTTS probability, card publication checks, evidence gates,
+match history, match resolution, player news, Polymarket discovery, squad
+depth, team-news refresh, UEFA context, weekly fixtures, and learning segments.
 
-Team over/under is supported, but it needs real bookmaker odds before those
-markets become official picks. Export the model-ranked team-total shortlist,
-fill the `odds` column from your bookmaker, import it, then rerun the model.
+For production work, the required checks also include Python compilation,
+`git diff --check`, SQLite `PRAGMA quick_check`, final-pick evidence reports,
+fixture audits, and desktop/mobile dashboard inspection.
 
-```bash
-python3 scripts/team_total_odds_cli.py --export-template team_total_odds.csv
-python3 scripts/team_total_odds_cli.py --import-file team_total_odds.csv
-python3 main.py --skip-scrape --no-fatigue
-```
+## Security and public-repository hygiene
 
-On Windows PowerShell:
+This is a public repository. Never commit API keys, access tokens, passwords,
+browser profiles, cookies, private URLs, or account exports.
+
+`config/settings.json` and `data/rollo_stake.db` already exist in repository
+history. Git ignore rules do not protect a file after it has been tracked, so
+do not place credentials or private information in either file. Use local
+environment variables or an ignored local file for any future secret.
+
+Generated run artifacts, Playwright captures, logs, error files, research
+caches, and virtual environments are ignored. Review staged files before every
+push:
 
 ```powershell
-python scripts\team_total_odds_cli.py --export-template team_total_odds.csv
-python scripts\team_total_odds_cli.py --import-file team_total_odds.csv
-python main.py --skip-scrape --no-fatigue
+git diff --cached --name-only
+git diff --cached
 ```
 
-For direct prompting instead of editing CSV:
+## Known limitations
 
-```powershell
-python scripts\team_total_odds_cli.py --interactive --max-rows 40
-```
-
-### Match Totals, BTTS, and Team Totals
-
-For one combined odds-shopping sheet, export the market watchlist. It includes
-1X2, match over/under, BTTS, and team over/under rows ranked by model price.
-Fill only Polymarket prices. The active card uses two risk bands: High Risk for
-bigger prices and Low Risk for tighter prices.
-
-```powershell
-python scripts\export_market_watchlist.py --output market_watchlist.csv --max-rows 200
-python scripts\import_polymarket_odds.py
-python scripts\export_market_watchlist.py --import-file market_watchlist.csv --bookmaker polymarket
-python scripts\rebuild_card.py
-```
-
-### Handicap / +0.5 Odds
-
-Side-protection picks like `Team +0.5` are handled as Asian handicap picks. Export the
-shortlist, fill the `odds` column, import it, then rerun the model.
-
-```powershell
-python scripts\handicap_odds_cli.py --export-template handicap_odds.csv
-python scripts\handicap_odds_cli.py --import-file handicap_odds.csv
-python main.py --skip-scrape --no-fatigue
-```
-
-### Coverage Check
-
-Before locking a weekly card, generate a coverage report. It shows which markets
-have odds, what made the official card, and the highest-priority missing team
-total / handicap prices.
-
-```powershell
-python scripts\odds_coverage_report.py --output odds_coverage_report.md
-```
-
-### Odds Import Safety
-
-Use dry-run mode before importing bulk odds. The historical importer only saves
-full/half Asian handicap lines because quarter lines need half-win/half-loss
-payout accounting that the current model does not support yet. The Polymarket
-scraper resolves odds to existing fixtures by default; use `--create-missing`
-only when you intentionally want new `pm_*` fixtures created.
-
-```powershell
-python scripts\import_historical_odds.py --seasons 2526 --leagues EPL --dry-run
-python scripts\scrape_polymarket_full.py --days 7 --dry-run
-python scripts\scrape_polymarket_full.py --days 7
-```
-
-### Match Results
-
-Completed scores are tracked in `match_results.csv` so the ignored SQLite
-database can be updated on any machine. Result import is guarded by Macau time:
-the importer skips matches whose final-result window has not passed yet, and
-the dashboard history displays the match played/kickoff date instead of the
-settled/import date.
-
-```powershell
-python scripts\import_match_results.py match_results.csv
-python main.py --skip-scrape --no-fatigue
-```
-
-### Update Workflow
-
-When the user says `update`, settle first and generate only if needed.
-
-```powershell
-git status -sb
-python scripts\import_match_results.py match_results.csv
-python scripts\study_external_card.py friend_cards
-python scripts\rebuild_card.py
-```
-
-After settlement, check pending official picks. If `2` or more pending picks
-remain, keep the current card and just rebuild the dashboard. If fewer than `2`
-remain, fetch the next-week Polymarket fixtures/odds, then rebuild predictions.
-Do not manually settle future or in-progress matches, and do not clear past
-pending picks before result import.
-
-### External Weekly Card Study
-
-When an outside prediction card is available, study it as aggregate market
-structure only. This does not copy external picks; it saves lessons such as
-market mix, DNB/+0.5 usage, team-total usage, and risk-band shape. The model
-uses that profile as a small prior, while settled Rollo losses still override
-it.
-
-```powershell
-python scripts\study_external_card.py friend_cards
-python scripts\rebuild_card.py
-```
-
-Put new friend card HTML files in `friend_cards/` before running the study step.
-
-## Architecture
-
-```
-rollo-stake-model/
-├── main.py                 # Orchestrator
-├── run_daily.sh            # Daily automation script
-├── config/
-│   └── settings.json       # API keys & config
-├── models/
-│   ├── core.py             # SQLite DB
-│   └── dixon_coles.py      # Dixon-Coles model
-├── scrapers/
-│   ├── stake_scraper.py    # Stake.com odds (placeholder)
-│   ├── football_data.py    # Historical data (football-data.co.uk)
-│   ├── fixtures.py         # Upcoming fixtures (demo data)
-│   ├── manual_odds.py      # CLI to input real bookmaker odds
-│   ├── news_scraper.py     # Free team news (blocked by sites)
-│   └── historical_loader.py # Multi-season data loader
-├── analysis/
-│   ├── edge_calculator.py  # Value bet finder + Kelly staking
-│   ├── fatigue.py          # Fixture congestion analysis
-│   └── team_news.py        # Injury/transfer adjustments
-├── dashboard/
-│   └── generator.py        # HTML dashboard
-├── scripts/
-│   └── team_news_cli.py    # Interactive team news input
-├── data/
-│   └── rollo_stake.db      # SQLite database (not in repo)
-└── tests/
-    ├── populate_demo.py    # Demo data
-    ├── add_odds.py         # Realistic odds
-    └── backtest.py         # Model validation
-```
-
-## Collaboration: Garfis + Codex + Rollo
-
-This repo is set up for collaboration between:
-- **Garfis** (me) — Initial build, architecture, model
-- **Codex (GPT-5.4)** — Your local coding assistant
-- **Rollo** — You, the user
-
-### Workflow
-1. Clone this repo to your laptop
-2. Use Codex to modify/improve
-3. Push to GitHub
-4. I (Garfis) read commits and suggest improvements
-
-### What Codex Should Know
-
-| File | Purpose | Modify? |
-|------|---------|---------|
-| `main.py` | Entry point | ✅ Add features |
-| `models/dixon_coles.py` | Core math | ⚠️ Be careful |
-| `analysis/edge_calculator.py` | Kelly + edge | ✅ Adjust staking |
-| `dashboard/generator.py` | HTML output | ✅ Add UI features |
-| `config/settings.json` | Settings | ✅ Adjust thresholds |
-
-### Priority Tasks for Codex
-1. **Results tracking** — Input match outcomes, calculate P&L
-2. **Flat staking option** — $X/pick instead of Kelly %
-3. **Real fixtures API** — API-Football integration
-4. **Two-range architecture** — Separate bankrolls for C/D ranges
-
-## Model Details
-
-### Dixon-Coles Model
-- Poisson distribution for goal scoring
-- Home advantage factor (~35%)
-- Dixon-Coles correction for low-score correlation (`rho=-0.13`)
-- Team-specific attack/defense ratings
-- Trained per league on all historical data
-
-### 14 Adjustment Layers
-
-Before odds are priced, production lambdas pass through `analysis/adjustment_layers.py`:
-rolling form blend, Elo strength-of-schedule, finishing/xG proxy, motivation,
-manager bounce, derby, injuries, European fatigue, cup fatigue, rest days,
-rotation, luck regression, lambda cap `[0.3, 5.0]`, and Dixon-Coles `rho=-0.13`.
-Run this after `main.py` to inspect the saved layer audit:
-
-```powershell
-python scripts\adjustment_layer_report.py --all
-```
-
-### Edge Calculation
-- **STRONG**: Edge ≥ 25% → Kelly stake
-- **KEEP**: Edge ≥ 10%, < 25% → Kelly stake
-- **CAUTION**: Edge ≥ 5%, < 10% → Kelly stake (capped)
-- **SKIP**: Edge < 5%
-
-### Kelly Criterion
-```
-Stake = Bankroll × Edge / (Odds - 1)
-```
-Where `Edge = Model Prob - (1 / Odds)`
-
-### Markets Supported
-- 1X2 (Home/Draw/Away)
-- Over/Under 2.5 goals
-
-## Data Sources
-
-| Source | Status | Notes |
-|--------|--------|-------|
-| Football-Data.co.uk | ✅ Working | Free, 7,989 matches, 5 leagues |
-| Demo fixtures | ✅ Working | Sample upcoming matches |
-| Realistic odds | ✅ Working | Manually populated |
-| API-Football | ⚠️ Needs key | Free tier: 100 calls/day |
-| Stake.com scraper | ❌ Blocked | Anti-bot protection |
-| Team news scraper | ❌ Blocked | All sites block bots |
-
-## To Activate Real-Time Mode
-
-### 1. Get API-Football Key (Optional - for real fixtures)
-- Sign up: https://www.api-football.com/
-- Free tier: 100 requests/day
-- Add to `config/settings.json`:
-```json
-{
-  "api_football_key": "your-key-here"
-}
-```
-
-### 2. Run Daily
-```bash
-# Add to crontab (runs daily at 9 AM)
-0 9 * * * /home/ubuntu/rollo-stake-model/run_daily.sh
-```
-
-## Team News Adjustments
-
-The model can't see real-world factors. Use the CLI to adjust manually.
-
-```bash
-python3 scripts/team_news_cli.py
-```
-
-**Commands:**
-```
-Liverpool injury Salah striker star
-Man City transfer Haaland striker good
-Arsenal motivation title_race
-done
-```
-
-## Backtesting
-
-```bash
-python3 tests/backtest.py
-```
-
-## What's Missing (Priority Order)
-
-1. **Results tracking** — Can't track P&L yet
-2. **Flat staking** — Only Kelly % now
-3. **Real fixtures** — Need API-Football
-4. **Auto odds** — Need residential proxy or paid API
-5. **Two-range system** — Separate C/D bankrolls
+- Live injury and team-news coverage depends on browser access or manual JSON
+  fallback and still requires evidence review.
+- Some team context is heuristic and can be missing or stale.
+- Quarter-goal handicap settlement is not supported.
+- The model can estimate probability; it cannot remove football variance or
+  guarantee profitable results.
+- Active thresholds and performance conclusions can change as more picks
+  settle. Inspect the code, settings, and database instead of relying on old
+  screenshots or fixed counts in documentation.
 
 ## License
 
-Private — for Rollo's use only.
+This repository currently has no `LICENSE` file. Contact the repository owner
+before reusing or redistributing the project beyond study and review.
